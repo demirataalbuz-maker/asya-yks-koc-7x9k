@@ -56,15 +56,26 @@
     .lock-card h2 { margin: 0 0 6px; font-size: 22px; color: #0f172a; }
     .lock-card p { margin: 0 0 20px; font-size: 13.5px; color: #475569; line-height: 1.45; }
     .lock-form { display: flex; flex-direction: column; gap: 12px; }
+    .lock-input-wrap { position: relative; display: flex; align-items: center; }
     .lock-input {
       width: 100%;
-      padding: 13px 15px;
+      padding: 13px 44px 13px 15px;
       border-radius: 12px;
       border: 1.8px solid #cbd5e1;
       font-size: 16px;
       outline: none;
       text-align: center;
       letter-spacing: 1px;
+    }
+    .lock-toggle-btn {
+      position: absolute;
+      right: 8px;
+      background: transparent;
+      border: none;
+      font-size: 18px;
+      cursor: pointer;
+      padding: 6px 8px;
+      line-height: 1;
     }
     .lock-input:focus { border-color: #4f46e5; box-shadow: 0 0 0 3px rgba(79, 70, 229, 0.16); }
     .lock-remember-row {
@@ -107,14 +118,20 @@
       <h2>Asya YKS Koçum</h2>
       <p>Kişisel deneme havuzu, günlük föyler ve 3D bilgi kartlarına ulaşmak için şifreyi gir.</p>
       <form id="lock-form" class="lock-form">
-        <input
-          type="password"
-          id="lock-password"
-          class="lock-input"
-          placeholder="Giriş şifresi..."
-          autocomplete="current-password"
-          required
-        />
+        <div class="lock-input-wrap">
+          <input
+            type="password"
+            id="lock-password"
+            class="lock-input"
+            placeholder="Giriş şifresi..."
+            autocomplete="current-password"
+            autocapitalize="none"
+            autocorrect="off"
+            spellcheck="false"
+            required
+          />
+          <button type="button" id="lock-toggle-pwd" class="lock-toggle-btn" aria-label="Şifreyi göster">👁️</button>
+        </div>
         <label class="lock-remember-row">
           <input type="checkbox" id="lock-remember" checked />
           Bu iPad'de beni hatırla (bir daha sormasın)
@@ -644,7 +661,7 @@
   <div id="toast" class="toast hidden"></div>
 
     <script>window.ASYA_STATIC_MODE = true;</script>
-  <script src="static_engine.js?v=3"></script>
-  <script src="app.js?v=8"></script>
+  <script src="static_engine.js?v=4"></script>
+  <script src="app.js?v=9"></script>
 </body>
 </html>

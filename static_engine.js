@@ -63,34 +63,58 @@
     const rememberEl = document.getElementById("lock-remember");
     const formEl = document.getElementById("lock-form");
     const btnEl = document.getElementById("lock-submit-btn");
+    const toggleBtn = document.getElementById("lock-toggle-pwd");
 
-    const resp = await fetch("data.enc.json?v=2", { cache: "no-store" });
-    if (!resp.ok) {
+    if (toggleBtn && inputEl) {
+      toggleBtn.addEventListener("click", () => {
+        const show = inputEl.type === "password";
+        inputEl.type = show ? "text" : "password";
+        toggleBtn.textContent = show ? "🙈" : "👁️";
+      });
+    }
+
+    if (!window.crypto || !window.crypto.subtle) {
       if (errEl) {
-        errEl.textContent = "Şifreli veri paketi yüklenemedi. Sayfayı yenile.";
+        errEl.textContent = "Tarayıcı güvenlik hatası: Lütfen linki https:// ile Safari'de açın.";
         errEl.classList.remove("hidden");
       }
-      throw new Error("data.enc.json yüklenemedi");
+      throw new Error("WebCrypto subtle unavailable");
     }
-    const encObj = await resp.json();
 
-    // Kayıtlı şifre varsa sessizce çözüp doğrudan aç
-    const saved = localStorage.getItem(SAVED_PWD_KEY);
-    if (saved) {
-      try {
-        window.ASYA_STATIC_DATA = await decryptBundle(encObj, saved);
+    // Veri paketini hemen arka planda indirmeye başla (submit listener'ı BLOKLAMADAN!)
+    const dataPromise = fetch("data.enc.json?v=4", { cache: "no-store" })
+      .then((resp) => {
+        if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+        return resp.json();
+      });
+
+    async function tryDecryptWithFallback(encObj, rawPwd) {
+      const candidates = [rawPwd];
+      const lower = rawPwd.toLowerCase();
+      if (lower !== rawPwd) candidates.push(lower);
+      let lastErr;
+      for (const cand of candidates) {
+        try {
+          return { data: await decryptBundle(encObj, cand), usedPwd: cand };
+        } catch (err) {
+          lastErr = err;
+        }
+      }
+      throw lastErr || new Error("Decrypt failed");
+    }
+
+    // ÖNCE submit listener'ı bağla — veri inerken bile tıklanınca sayfa ASLA yenilenmesin!
+    return new Promise((resolve) => {
+      let resolved = false;
+      const finish = (data) => {
+        if (resolved) return;
+        resolved = true;
+        window.ASYA_STATIC_DATA = data;
         if (lockEl) lockEl.classList.add("hidden");
         injectLockButton();
-        return;
-      } catch {
-        localStorage.removeItem(SAVED_PWD_KEY);
-      }
-    }
+        resolve();
+      };
 
-    if (lockEl) lockEl.classList.remove("hidden");
-    if (inputEl) setTimeout(() => inputEl.focus(), 60);
-
-    return new Promise((resolve) => {
       formEl.addEventListener("submit", async (e) => {
         e.preventDefault();
         const pwd = (inputEl.value || "").trim();
@@ -101,29 +125,58 @@
         }
         if (errEl) errEl.classList.add("hidden");
         try {
-          window.ASYA_STATIC_DATA = await decryptBundle(encObj, pwd);
+          const encObj = await dataPromise;
+          const { data, usedPwd } = await tryDecryptWithFallback(encObj, pwd);
           if (!rememberEl || rememberEl.checked) {
-            localStorage.setItem(SAVED_PWD_KEY, pwd);
+            try {
+              localStorage.setItem(SAVED_PWD_KEY, usedPwd);
+            } catch {}
           }
-          if (lockEl) lockEl.classList.add("hidden");
-          injectLockButton();
-          resolve();
-        } catch {
+          finish(data);
+        } catch (err) {
           if (errEl) {
-            errEl.textContent = "❌ Şifre hatalı, tekrar dene!";
+            const msg = String(err?.message || "");
+            errEl.textContent = msg.startsWith("HTTP ")
+              ? "⚠️ Veri paketi indirilemedi, interneti kontrol edip tekrar dene."
+              : "❌ Şifre hatalı! Küçük harfle 'asya2026!' yazdığından emin ol.";
             errEl.classList.remove("hidden");
           }
           if (inputEl) {
-            inputEl.value = "";
             inputEl.focus();
+            inputEl.select();
           }
         } finally {
-          if (btnEl) {
+          if (!resolved && btnEl) {
             btnEl.disabled = false;
             btnEl.textContent = "🔓 Giriş Yap";
           }
         }
       });
+
+      // Kayıtlı şifre varsa veri indiğinde sessizce otomatik aç
+      const saved = (() => {
+        try {
+          return localStorage.getItem(SAVED_PWD_KEY);
+        } catch {
+          return null;
+        }
+      })();
+      if (saved) {
+        if (btnEl) btnEl.textContent = "⏳ Otomatik açılıyor...";
+        dataPromise
+          .then((encObj) => tryDecryptWithFallback(encObj, saved))
+          .then(({ data }) => finish(data))
+          .catch(() => {
+            try {
+              localStorage.removeItem(SAVED_PWD_KEY);
+            } catch {}
+            if (!resolved && btnEl) btnEl.textContent = "🔓 Giriş Yap";
+            if (lockEl) lockEl.classList.remove("hidden");
+          });
+      } else {
+        if (lockEl) lockEl.classList.remove("hidden");
+        if (inputEl) setTimeout(() => inputEl.focus(), 60);
+      }
     });
   };
 
