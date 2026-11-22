@@ -218,7 +218,7 @@ async function loadDashboard() {
           <div class="weak-item">
             <div>
               <strong>${escapeHtml(w.subject)} — ${escapeHtml(w.topic)}</strong>
-              <div class="muted">${w.exam_type} • ${w.active_questions} aktif hata • ${w.cleared_count} temizlendi</div>
+              <div class="muted">${w.exam_type}${w.expected_questions ? ` • ~${w.expected_questions} soruda` : ""} • ${w.active_questions} hata${w.expected_questions ? ` (≈${w.estimated_correct}D)` : ""} • ${w.cleared_count} temizlendi</div>
             </div>
             <span class="score-pill ${scoreClass(w.score)}">${w.score}/100</span>
           </div>`
@@ -612,8 +612,9 @@ async function loadScores() {
     .map(
       (s) => `
       <div class="subject-card">
-        <div class="muted">${s.exam_type} • ${s.topic_count} konu</div>
+        <div class="muted">${s.exam_type} • ${s.exam_count > 0 ? `${s.exam_count} Deneme (~${s.expected_questions} soru)` : `${s.topic_count} konu (Deneme yok)`}</div>
         <h4 style="margin:4px 0;">${escapeHtml(s.subject)}</h4>
+        ${s.exam_count > 0 ? `<div class="muted" style="font-size:11.5px;margin-bottom:6px;">${s.active_mistakes} hata • ≈${s.estimated_correct} doğru</div>` : ""}
         <span class="score-pill ${scoreClass(s.average_score)}">${s.average_score} / 100</span>
       </div>`
     )
@@ -633,7 +634,11 @@ async function loadScores() {
         <strong>${escapeHtml(t.subject)}</strong>
         <div>
           <div style="font-weight:600;">${escapeHtml(t.topic)}</div>
-          <div class="muted">Aktif: ${t.unsolved_wrong}Y / ${t.unsolved_blank}B • Kalıcı Temizlenen: ${t.cleared_count}</div>
+          <div class="muted">${
+            t.exam_count > 0 && t.expected_questions > 0
+              ? `${t.exam_count} Deneme (~${t.expected_questions} soru) • ≈${t.estimated_correct}D • `
+              : ""
+          }Aktif: ${t.unsolved_wrong}Y / ${t.unsolved_blank}B • Temizlenen: ${t.cleared_count}</div>
         </div>
         <div class="progress-bar">
           <div class="progress-fill" style="width:${t.score}%"></div>

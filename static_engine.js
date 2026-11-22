@@ -64,7 +64,7 @@
     const formEl = document.getElementById("lock-form");
     const btnEl = document.getElementById("lock-submit-btn");
 
-    const resp = await fetch("data.enc.json?v=1", { cache: "no-store" });
+    const resp = await fetch("data.enc.json?v=2", { cache: "no-store" });
     if (!resp.ok) {
       if (errEl) {
         errEl.textContent = "Şifreli veri paketi yüklenemedi. Sayfayı yenile.";
@@ -403,8 +403,21 @@
       }));
   }
 
+  function getTopicWeight(seed, examType, subject, topic) {
+    const w = seed.topic_weights?.[examType]?.[subject]?.[topic];
+    if (typeof w === "number") return w;
+    const quota = seed.subject_quotas?.[examType]?.[subject] || 5;
+    const tList = seed.topics?.[examType]?.[subject] || [];
+    return Math.max(0.5, Math.round((quota / Math.max(1, tList.length)) * 100) / 100);
+  }
+
+  function getExamCounts(seed) {
+    return seed.exam_counts || { TYT: 3, AYT: 0 };
+  }
+
   function computeTopicScores(st) {
     const seed = window.ASYA_STATIC_DATA || {};
+    const examCounts = getExamCounts(seed);
     const activeQs = getActiveQuestions(st);
     const byKey = new Map();
 
@@ -434,8 +447,16 @@
       const [exam_type, subject, topic] = k.split("||");
       const agg = byKey.get(k) || { active: 0, wrong: 0, blank: 0, repeatWrong: 0 };
       const cleared = clearedMap.get(k) || 0;
-      const penalty = agg.wrong * 12 + agg.blank * 8 + agg.repeatWrong * 4;
-      const score = Math.max(0, Math.min(100, 100 - penalty));
+
+      const nExams = Math.max(1, examCounts[exam_type] || 0);
+      const weight = getTopicWeight(seed, exam_type, subject, topic);
+      const expectedQ = Math.round(Math.max(1.0, nExams * weight) * 10) / 10;
+      const activeErrors = agg.wrong + agg.blank;
+      const denom = Math.max(expectedQ, activeErrors, 1.0);
+      const rawPct = 100.0 * Math.max(0.0, (expectedQ - activeErrors) / denom);
+      const score = Math.max(0, Math.min(100, Math.round(rawPct - agg.repeatWrong * 3)));
+      const estCorrect = Math.max(0, Math.round(expectedQ - activeErrors));
+
       let level = "Güçlü";
       if (agg.active === 0 && cleared > 0) level = "Temizlendi ✓";
       else if (score < 50) level = "Kritik";
@@ -445,6 +466,9 @@
         exam_type,
         subject,
         topic,
+        exam_count: nExams,
+        expected_questions: expectedQ,
+        estimated_correct: estCorrect,
         active_questions: agg.active,
         unsolved_wrong: agg.wrong,
         unsolved_blank: agg.blank,
@@ -585,6 +609,7 @@
 
     // 2. Dashboard
     if (path === "/api/dashboard" && method === "GET") {
+      const examCounts = getExamCounts(seed);
       const activeQs = getActiveQuestions(st);
       const scores = computeTopicScores(st);
       const missions = getMergedMissions(st);
@@ -592,7 +617,10 @@
       const aytTotal = activeQs.filter((q) => q.exam_type === "AYT").length;
       const clearedFromSeed = (seed.topic_history || []).reduce((acc, h) => acc + (h.cleared_count || 0), 0);
       const clearedExtra = Object.values(st.topicClearedExtra || {}).reduce((acc, v) => acc + v, 0);
-      const avgScore = scores.length
+      const totalExpectedAll = (examCounts.TYT || 0) * 120 + (examCounts.AYT || 0) * 80;
+      const avgScore = totalExpectedAll > 0
+        ? Math.round(1000 * Math.max(0, (totalExpectedAll - activeQs.length) / totalExpectedAll)) / 10
+        : scores.length
         ? Math.round((scores.reduce((a, b) => a + b.score, 0) / scores.length) * 10) / 10
         : 100;
       const openMissions = missions.filter((m) => m.status === "open").length;
@@ -605,6 +633,8 @@
           ayt_total: aytTotal,
           cleared_total: clearedFromSeed + clearedExtra,
           average_topic_score: avgScore,
+          exam_counts: examCounts,
+          total_expected_questions: totalExpectedAll,
           weekly_exam_ready: activeQs.length >= 10,
           completed_mock_exams: completedMocks,
           streak_days: calcStreak(st.activityDays),
@@ -617,6 +647,7 @@
 
     // 3. Scores
     if (path === "/api/scores" && method === "GET") {
+      const examCounts = getExamCounts(seed);
       const examFilter = params.get("exam_type") || "ALL";
       const subjFilter = params.get("subject") || "ALL";
       const includeAll = params.get("include_all") === "true";
@@ -627,21 +658,26 @@
       if (includeAll) {
         for (const [et, subjMap] of Object.entries(seed.topics || {})) {
           if (examFilter !== "ALL" && et !== examFilter) continue;
+          const nEx = examCounts[et] || 0;
           for (const [subj, topics] of Object.entries(subjMap)) {
             if (subjFilter !== "ALL" && subj !== subjFilter) continue;
             for (const top of topics) {
               const found = scoreMap.get(`${et}||${subj}||${top}`);
+              const expQ = nEx > 0 ? Math.round(nEx * getTopicWeight(seed, et, subj, top) * 10) / 10 : 0;
               list.push(
                 found || {
                   exam_type: et,
                   subject: subj,
                   topic: top,
+                  exam_count: nEx,
+                  expected_questions: expQ,
+                  estimated_correct: Math.round(expQ),
                   active_questions: 0,
                   unsolved_wrong: 0,
                   unsolved_blank: 0,
                   cleared_count: 0,
                   score: 100,
-                  level: "Güçlü",
+                  level: nEx > 0 ? "Temiz" : "Deneme Yok",
                 }
               );
             }
@@ -659,18 +695,33 @@
       const subjAgg = new Map();
       for (const r of list) {
         const k = `${r.exam_type}||${r.subject}`;
-        if (!subjAgg.has(k)) subjAgg.set(k, { exam_type: r.exam_type, subject: r.subject, sum: 0, cnt: 0 });
+        if (!subjAgg.has(k)) subjAgg.set(k, { exam_type: r.exam_type, subject: r.subject, topics: 0, active: 0, cleared: 0 });
         const o = subjAgg.get(k);
-        o.sum += r.score;
-        o.cnt += 1;
+        o.topics += 1;
+        o.active += r.active_questions || 0;
+        o.cleared += r.cleared_count || 0;
       }
-      const subject_summary = Array.from(subjAgg.values()).map((o) => ({
-        exam_type: o.exam_type,
-        subject: o.subject,
-        topic_count: o.cnt,
-        average_score: Math.round((o.sum / o.cnt) * 10) / 10,
-      }));
-      return { topic_scores: list, subject_summary };
+      const subject_summary = Array.from(subjAgg.values())
+        .map((o) => {
+          const nEx = examCounts[o.exam_type] || 0;
+          const quota = seed.subject_quotas?.[o.exam_type]?.[o.subject] || 10;
+          const expTotal = nEx * quota;
+          const avgS = expTotal > 0 ? Math.round(1000 * Math.max(0, (expTotal - o.active) / expTotal)) / 10 : 100.0;
+          const estC = expTotal > 0 ? Math.max(0, expTotal - o.active) : 0;
+          return {
+            exam_type: o.exam_type,
+            subject: o.subject,
+            topic_count: o.topics,
+            exam_count: nEx,
+            expected_questions: expTotal,
+            active_mistakes: o.active,
+            estimated_correct: estC,
+            cleared_count: o.cleared,
+            average_score: avgS,
+          };
+        })
+        .sort((a, b) => (a.exam_count > 0 ? 0 : 1) - (b.exam_count > 0 ? 0 : 1) || a.average_score - b.average_score || b.active_mistakes - a.active_mistakes);
+      return { topic_scores: list, subject_summary, exam_counts: examCounts };
     }
 
     // 4. Questions
