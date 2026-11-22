@@ -1,0 +1,21 @@
+{
+  "name": "Asya YKS Koçum",
+  "short_name": "Asya YKS",
+  "description": "Kişisel YKS Hata Analizi, Günlük Görev Föyü ve 3D Bilgi Kartları",
+  "start_url": "./",
+  "display": "standalone",
+  "background_color": "#f4f6fb",
+  "theme_color": "#4f46e5",
+  "icons": [
+    {
+      "src": "apple-touch-icon.png",
+      "sizes": "180x180",
+      "type": "image/png"
+    },
+    {
+      "src": "icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png"
+    }
+  ]
+}

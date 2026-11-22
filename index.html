@@ -1,0 +1,650 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+  <meta name="robots" content="noindex, nofollow" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <meta name="apple-mobile-web-app-title" content="Asya YKS" />
+  <meta name="theme-color" content="#4f46e5" />
+    <link rel="manifest" href="manifest.json" />
+  <link rel="apple-touch-icon" href="apple-touch-icon.png" />
+  <title>Asya YKS Koçum — Hata Analizi, Günlük Föy & Deneme Sistemi</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.css" />
+  <script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.js"></script>
+  <script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/contrib/auto-render.min.js"></script>
+  <link rel="stylesheet" href="styles.css?v=7" />
+
+  <style>
+    .lock-overlay {
+      position: fixed;
+      inset: 0;
+      z-index: 9999;
+      background: linear-gradient(135deg, #1e1b4b 0%, #3730a3 55%, #4f46e5 100%);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 20px;
+    }
+    .lock-overlay.hidden { display: none !important; }
+    .lock-card {
+      width: 100%;
+      max-width: 400px;
+      background: rgba(255, 255, 255, 0.98);
+      border-radius: 24px;
+      padding: 32px 28px 24px;
+      box-shadow: 0 24px 60px rgba(0, 0, 0, 0.35);
+      text-align: center;
+    }
+    .lock-avatar {
+      width: 64px;
+      height: 64px;
+      margin: 0 auto 14px;
+      border-radius: 18px;
+      background: linear-gradient(135deg, #4f46e5, #8b5cf6);
+      color: #fff;
+      font-size: 30px;
+      font-weight: 900;
+      display: grid;
+      place-items: center;
+      box-shadow: 0 8px 20px rgba(79, 70, 229, 0.35);
+    }
+    .lock-card h2 { margin: 0 0 6px; font-size: 22px; color: #0f172a; }
+    .lock-card p { margin: 0 0 20px; font-size: 13.5px; color: #475569; line-height: 1.45; }
+    .lock-form { display: flex; flex-direction: column; gap: 12px; }
+    .lock-input {
+      width: 100%;
+      padding: 13px 15px;
+      border-radius: 12px;
+      border: 1.8px solid #cbd5e1;
+      font-size: 16px;
+      outline: none;
+      text-align: center;
+      letter-spacing: 1px;
+    }
+    .lock-input:focus { border-color: #4f46e5; box-shadow: 0 0 0 3px rgba(79, 70, 229, 0.16); }
+    .lock-remember-row {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      font-size: 13px;
+      font-weight: 600;
+      color: #334155;
+      cursor: pointer;
+    }
+    .lock-btn {
+      width: 100%;
+      justify-content: center;
+      padding: 13px;
+      font-size: 15px;
+      font-weight: 800;
+      border-radius: 12px;
+    }
+    .lock-error {
+      background: #fff1f2;
+      color: #be123c;
+      border: 1px solid #fecdd3;
+      padding: 8px 10px;
+      border-radius: 10px;
+      font-size: 13px;
+      font-weight: 700;
+    }
+    .lock-foot { margin-top: 16px; font-size: 11.5px; color: #64748b; font-weight: 600; }
+  </style>
+
+</head>
+<body>
+
+  <!-- 🔒 AES-256 ŞİFRELİ GİRİŞ EKRANI (Sadece iPad / GitHub Pages Statik Mod) -->
+  <div id="asya-lock-screen" class="lock-overlay">
+    <div class="lock-card">
+      <div class="lock-avatar">A</div>
+      <h2>Asya YKS Koçum</h2>
+      <p>Kişisel deneme havuzu, günlük föyler ve 3D bilgi kartlarına ulaşmak için şifreyi gir.</p>
+      <form id="lock-form" class="lock-form">
+        <input
+          type="password"
+          id="lock-password"
+          class="lock-input"
+          placeholder="Giriş şifresi..."
+          autocomplete="current-password"
+          required
+        />
+        <label class="lock-remember-row">
+          <input type="checkbox" id="lock-remember" checked />
+          Bu iPad'de beni hatırla (bir daha sormasın)
+        </label>
+        <div id="lock-error" class="lock-error hidden"></div>
+        <button type="submit" id="lock-submit-btn" class="btn btn-primary lock-btn">
+          🔓 Giriş Yap
+        </button>
+      </form>
+      <div class="lock-foot">🔐 Tüm sorular AES-256 ile şifrelidir</div>
+    </div>
+  </div>
+
+  <div class="app-shell">
+    <!-- Yan Menü -->
+    <aside class="sidebar">
+      <div class="brand">
+        <div class="brand-avatar">A</div>
+        <div>
+          <h1>Asya YKS</h1>
+          <p>Sayısal Hata & Föy Koçu</p>
+        </div>
+      </div>
+
+      <nav class="nav-links">
+        <button class="nav-btn active" data-tab="dashboard">
+          <span class="nav-icon">🏠</span>
+          <span>Ana Sayfa</span>
+        </button>
+        <button class="nav-btn" data-tab="daily">
+          <span class="nav-icon">🎯</span>
+          <span>Günlük Görev Föyü</span>
+          <span class="nav-badge" id="nav-daily-badge">0</span>
+        </button>
+        <button class="nav-btn" data-tab="scores">
+          <span class="nav-icon">📊</span>
+          <span>Konu Puanları</span>
+        </button>
+        <button class="nav-btn" data-tab="reminders">
+          <span class="nav-icon">🎴</span>
+          <span>Bilgi Kartları</span>
+          <span class="nav-badge" id="nav-rem-badge">0</span>
+        </button>
+        <button class="nav-btn" data-tab="mock">
+          <span class="nav-icon">📝</span>
+          <span>Haftalık Deneme</span>
+        </button>
+        <button class="nav-btn" data-tab="bank">
+          <span class="nav-icon">🖼️</span>
+          <span>Soru Bankası</span>
+        </button>
+      </nav>
+
+      <div class="sidebar-footer">
+        <div class="streak-card">
+          <div class="streak-flame">🔥</div>
+          <div>
+            <div class="streak-value" id="sidebar-streak">0 Gün</div>
+            <div class="streak-label">Çalışma Serisi</div>
+          </div>
+        </div>
+      </div>
+    </aside>
+
+    <!-- Ana İçerik -->
+    <main class="main-content">
+      <!-- 1. ANA SAYFA -->
+      <section id="tab-dashboard" class="tab-panel active">
+        <header class="page-header">
+          <div>
+            <h2>Hoş geldin, Asya! 👋</h2>
+            <p class="subtitle">Her konudan 10 soruluk günlük föyünü yazdır, optiğe kodla — doğru yaptığın sorular havuzdan kalıcı silinsin!</p>
+          </div>
+          <div class="header-actions">
+            <button class="btn btn-primary" onclick="switchTab('bank'); openUploadModal();">
+              + Yeni Soru Ekle
+            </button>
+          </div>
+        </header>
+
+        <div class="stats-grid">
+          <div class="stat-card">
+            <span class="stat-label">Havuzdaki Aktif Hata</span>
+            <strong class="stat-value text-amber" id="stat-active">0</strong>
+            <span class="stat-sub" id="stat-split">TYT: 0 • AYT: 0</span>
+          </div>
+          <div class="stat-card">
+            <span class="stat-label">Kalıcı Temizlenen Soru</span>
+            <strong class="stat-value text-emerald" id="stat-cleared">0</strong>
+            <span class="stat-sub">Doğru yapılıp DB'den silinen</span>
+          </div>
+          <div class="stat-card">
+            <span class="stat-label">Ortalama Konu Puanı</span>
+            <strong class="stat-value text-indigo" id="stat-avg-score">100</strong>
+            <span class="stat-sub">100 üzerinden</span>
+          </div>
+          <div class="stat-card">
+            <span class="stat-label">Haftalık Deneme</span>
+            <strong class="stat-value text-emerald" id="stat-exam-ready">0/10 Soru</strong>
+            <span class="stat-sub" id="stat-exam-count">Tamamlanan: 0</span>
+          </div>
+        </div>
+
+        <div class="dashboard-grid">
+          <div class="card">
+            <div class="card-header">
+              <h3>🎯 Bugünkü Günlük Görev Föyleri</h3>
+              <button class="btn btn-sm btn-primary" onclick="switchTab('daily')">Görevlere Git →</button>
+            </div>
+            <div id="dash-today-missions" class="weak-list"></div>
+          </div>
+
+          <div class="card">
+            <div class="card-header">
+              <h3>⚠️ Öncelikli Konular (En Düşük Puanlar)</h3>
+              <button class="btn btn-sm btn-ghost" onclick="switchTab('scores')">Tümünü Gör →</button>
+            </div>
+            <div id="dash-weak-topics" class="weak-list"></div>
+          </div>
+        </div>
+      </section>
+
+      <!-- 2. KONU BAZLI GÜNLÜK GÖREV + OTOMATİK PDF + OPTİK KODLAMA -->
+      <section id="tab-daily" class="tab-panel">
+        <div id="daily-hub-view">
+          <header class="page-header">
+            <div>
+              <h2>🎯 Günlük Görev Föyleri (Hazır PDF Kâğıtları)</h2>
+              <p class="subtitle">Tüm dersler (Matematik, Geometri, Fizik, Kimya, Türkçe...) tek kâğıtta! PDF'i indirip çıktı al, çözüp siteye optik kodla — doğru yaptıkların DB'den silinsin!</p>
+            </div>
+            <div class="header-actions">
+              <select id="daily-exam-filter" class="select-input" onchange="loadDailyHub()">
+                <option value="ALL">Tümü (TYT + AYT)</option>
+                <option value="TYT">Sadece TYT</option>
+                <option value="AYT">Sadece AYT (Sayısal)</option>
+              </select>
+              <button class="btn btn-primary" onclick="createMixedMission(10)">📄 10 Soruluk Karma Föy</button>
+              <button class="btn btn-secondary" onclick="splitAllIntoSheets()">📦 Tüm Havuzu 10'luk Kâğıtlara Böl</button>
+              <button class="btn btn-secondary" onclick="createAllInOneSheet()">📚 Tüm Soruları Tek PDF Yap</button>
+            </div>
+          </header>
+
+          <div class="card">
+            <div class="card-header">
+              <h3>🗂️ Hazır Günlük Görev Kâğıtları (Otomatik PDF)</h3>
+              <span class="muted">Klasör: gunluk_gorevler/</span>
+            </div>
+            <div id="missions-history-list" class="weak-list"></div>
+          </div>
+
+          <details class="card">
+            <summary style="cursor:pointer;font-weight:700;font-size:15px;">📚 İstersen Tek Konudan Özel Föy Oluştur (Konu Bazlı Liste)</summary>
+            <div style="margin-top:14px;" id="ready-topics-grid" class="ready-topics-grid"></div>
+          </details>
+        </div>
+
+        <!-- AKTİF GÖREV DETAY & OPTİK FORM -->
+        <div id="daily-detail-view" class="hidden">
+          <div class="card exam-topbar">
+            <div>
+              <h3 id="mission-detail-title">Günlük Görev</h3>
+              <span class="muted" id="mission-detail-meta"></span>
+            </div>
+            <div class="header-actions">
+              <a id="mission-pdf-link" class="btn btn-secondary btn-sm" href="#" target="_blank">📥 PDF İndir</a>
+              <a id="mission-print-link" class="btn btn-secondary btn-sm" href="#" target="_blank">🖨️ Yazdır (ÖSYM Föyü)</a>
+              <button class="btn btn-ghost btn-sm" onclick="closeMissionDetail()">← Listeye Dön</button>
+            </div>
+          </div>
+
+          <!-- Optik Form veya Sonuç Özeti -->
+          <div id="optical-form-card" class="card">
+            <div class="card-header">
+              <h3>✏️ Optik Form Kodlama</h3>
+              <span class="muted">Kağıttan çözdüğün şıkları aşağıya kodla</span>
+            </div>
+            <div id="optical-grid" class="optical-grid"></div>
+            <div class="form-actions" style="margin-top:16px;display:flex;justify-content:flex-end;">
+              <button class="btn btn-primary btn-lg" onclick="submitOpticalForm()">
+                ✅ Optik Formu Değerlendir (Doğrular DB'den Silinir)
+              </button>
+            </div>
+          </div>
+
+          <div id="mission-graded-banner" class="card graded-banner hidden"></div>
+
+          <div id="mission-items-list" class="daily-list"></div>
+        </div>
+      </section>
+
+      <!-- 3. KONU PUANLARI -->
+      <section id="tab-scores" class="tab-panel">
+        <header class="page-header">
+          <div>
+            <h2>📊 Konu Puanları — Sayısal (100 Üzerinden)</h2>
+            <p class="subtitle">Hatalarını günlük görevde doğru kodladıkça veritabanından silinir ve konu puanın 100'e çıkar!</p>
+          </div>
+          <div class="header-actions">
+            <select id="scores-mode" class="select-input" onchange="loadScores()">
+              <option value="all" selected>Tüm TYT + AYT Sayısal Müfredatı</option>
+              <option value="mistakes">Sadece Hata / Geçmişi Olan Konular</option>
+            </select>
+            <select id="scores-exam-filter" class="select-input" onchange="loadScores()">
+              <option value="ALL">Tümü (TYT + AYT)</option>
+              <option value="TYT">TYT</option>
+              <option value="AYT">AYT (Sayısal)</option>
+            </select>
+            <select id="scores-subject-filter" class="select-input" onchange="loadScores()">
+              <option value="ALL">Tüm Dersler</option>
+            </select>
+          </div>
+        </header>
+
+        <div id="subject-summary-grid" class="subject-grid"></div>
+
+        <div class="card">
+          <div class="card-header">
+            <h3>Konu Bazlı Detaylı Puan Tablosu</h3>
+            <span class="muted">En düşük puandan en yükseğe sıralı</span>
+          </div>
+          <div id="topic-scores-list" class="scores-table-wrap"></div>
+        </div>
+      </section>
+
+      <!-- 4. HAFTALIK DENEME -->
+      <section id="tab-mock" class="tab-panel">
+        <header class="page-header">
+          <div>
+            <h2>📝 Haftalık Hata Denemesi</h2>
+            <p class="subtitle">Havuzda kalan yanlışlarından ve boşlarından karma deneme sınavı oluştur ve netini gör.</p>
+          </div>
+        </header>
+
+        <div id="mock-setup-view">
+          <div class="card mock-create-card">
+            <h3>Yeni Özel Deneme Oluştur</h3>
+            <div class="form-grid">
+              <div class="form-group">
+                <label>Deneme Başlığı</label>
+                <input type="text" id="mock-title" class="text-input" placeholder="Örn: Haftalık TYT/AYT Karma Deneme" />
+              </div>
+              <div class="form-group">
+                <label>Sınav Türü</label>
+                <select id="mock-exam-filter" class="select-input">
+                  <option value="ALL">TYT + AYT Karma</option>
+                  <option value="TYT">Sadece TYT</option>
+                  <option value="AYT">Sadece AYT (Sayısal)</option>
+                </select>
+              </div>
+              <div class="form-group">
+                <label>Soru Sayısı</label>
+                <select id="mock-count" class="select-input">
+                  <option value="10">10 Soru (Mini)</option>
+                  <option value="20" selected>20 Soru (Standart)</option>
+                  <option value="30">30 Soru</option>
+                  <option value="40">40 Soru (Tam Haftalık)</option>
+                </select>
+              </div>
+            </div>
+            <div class="form-actions">
+              <button class="btn btn-primary" onclick="createMockExam()">🚀 Denemeyi Başlat</button>
+            </div>
+          </div>
+
+          <div class="card">
+            <div class="card-header">
+              <h3>Geçmiş Denemeler</h3>
+            </div>
+            <div id="mock-history-list"></div>
+          </div>
+        </div>
+
+        <div id="mock-runner-view" class="hidden">
+          <div class="card exam-topbar">
+            <div>
+              <h3 id="runner-title">Deneme</h3>
+              <span class="muted" id="runner-meta"></span>
+            </div>
+            <div class="exam-timer-wrap">
+              <span class="timer-pill" id="runner-timer">⏱️ 00:00</span>
+              <button class="btn btn-ghost btn-sm" onclick="closeMockRunner()">← Listeye Dön</button>
+            </div>
+          </div>
+
+          <div id="runner-questions-list" class="runner-list"></div>
+
+          <div class="exam-submit-bar" id="runner-submit-bar">
+            <button class="btn btn-primary btn-lg" onclick="submitMockExam()">✅ Denemeyi Bitir ve Sonucu Gör</button>
+          </div>
+
+          <div id="runner-result-summary" class="card hidden"></div>
+        </div>
+      </section>
+
+      <!-- 5. SORU BANKASI -->
+      <section id="tab-bank" class="tab-panel">
+        <header class="page-header">
+          <div>
+            <h2>🖼️ Aktif Soru Havuzu</h2>
+            <p class="subtitle">Burada sadece henüz doğru çözülmemiş aktif hatalar durur. Asya optiğe doğru kodladığı an soru otomatik silinir.</p>
+          </div>
+          <div class="header-actions">
+            <button class="btn btn-primary" onclick="openUploadModal()">+ Yeni Soru Ekle</button>
+          </div>
+        </header>
+
+        <div class="card filter-bar">
+          <select id="filter-exam" class="select-input" onchange="loadQuestions()">
+            <option value="ALL">Tüm Sınavlar</option>
+            <option value="TYT">TYT</option>
+            <option value="AYT">AYT (Sayısal)</option>
+          </select>
+          <select id="filter-subject" class="select-input" onchange="loadQuestions()">
+            <option value="ALL">Tüm Dersler</option>
+          </select>
+          <select id="filter-mistake" class="select-input" onchange="loadQuestions()">
+            <option value="ALL">Yanlış & Boş</option>
+            <option value="yanlis">Sadece Yanlış</option>
+            <option value="bos">Sadece Boş</option>
+          </select>
+          <input type="text" id="filter-search" class="text-input" style="grid-column: span 2;" placeholder="Konu, soru metni veya deneme adı ara..." oninput="loadQuestions()" />
+        </div>
+
+        <div id="questions-grid" class="questions-grid"></div>
+      </section>
+
+      <!-- 6. BİLGİ KARTLARI (ÇEVİRMELİ FLASHCARD + GÖRSEL POSTER & BÖLÜM BÖLÜM PDF) -->
+      <section id="tab-reminders" class="tab-panel">
+        <header class="page-header">
+          <div>
+            <h2>🎴 Bilgi Kartları — Şunu Unutma!</h2>
+            <p class="subtitle">Sıkıcı metin yığını yok! Kartı çevirip 3 saniyede kendini test et, ya da sadece yeni bölümü / Final Sürümü posterini yazdır.</p>
+          </div>
+          <div class="header-actions">
+            <button class="btn btn-primary" onclick="openReminderModal()">+ Yeni Kart Ekle</button>
+          </div>
+        </header>
+
+        <!-- ÜST KONTROL: GÖRÜNÜM MODU + BÖLÜM BÖLÜM / FİNAL SÜRÜMÜ PDF ÇUBUĞU -->
+        <div class="card rem-studio-bar">
+          <div class="rem-mode-switch">
+            <button class="mode-pill active" id="btn-mode-flashcard" onclick="setReminderMode('flashcard')">
+              🎴 Çevirmeli Bilgi Kartı
+            </button>
+            <button class="mode-pill" id="btn-mode-wall" onclick="setReminderMode('wall')">
+              🖼️ Görsel Poster Duvarı
+            </button>
+          </div>
+
+          <div class="rem-export-actions" id="rem-export-actions">
+            <!-- JS tarafından aktif bölüm / yeni kart sayısına göre doldurulur -->
+          </div>
+        </div>
+
+        <!-- BÖLÜM SEÇİCİ HAPLAR + FİLTRELER -->
+        <div class="card rem-filter-panel">
+          <div class="batch-pills-row" id="rem-batch-pills"></div>
+          <div class="rem-sub-filters">
+            <select id="rem-exam-filter" class="select-input" onchange="loadReminders()">
+              <option value="ALL">Tümü (TYT + AYT)</option>
+              <option value="TYT">TYT</option>
+              <option value="AYT">AYT (Sayısal)</option>
+            </select>
+            <select id="rem-subject-filter" class="select-input" onchange="loadReminders()">
+              <option value="ALL">Tüm Dersler</option>
+            </select>
+            <label class="rem-check-label">
+              <input type="checkbox" id="rem-only-unmastered" checked onchange="loadReminders()" />
+              Sadece Henüz Öğrenilmemişler
+            </label>
+            <button class="btn btn-ghost btn-sm" onclick="shuffleFlashcards()" title="Desteyi karıştır">
+              🔀 Desteyi Karıştır
+            </button>
+          </div>
+        </div>
+
+        <!-- MOD 1: 3D ÇEVİRMELİ BİLGİ KARTI OYUNU -->
+        <div id="flashcard-stage" class="flashcard-stage"></div>
+
+        <!-- MOD 2: GÖRSEL POSTER DUVARI -->
+        <div id="reminders-grid" class="reminders-grid hidden"></div>
+      </section>
+    </main>
+  </div>
+
+  <!-- HATIRLATMA KARTI EKLEME MODALI -->
+  <div id="reminder-modal" class="modal hidden">
+    <div class="modal-backdrop" onclick="closeReminderModal()"></div>
+    <div class="modal-dialog">
+      <div class="modal-header">
+        <h3>💡 Yeni "Şunu Unutma!" Kartı Ekle</h3>
+        <button class="modal-close" onclick="closeReminderModal()">✕</button>
+      </div>
+      <form id="reminder-form" onsubmit="submitReminder(event)">
+        <div class="form-grid">
+          <div class="form-group">
+            <label>Sınav Türü</label>
+            <select id="r-exam-type" class="select-input">
+              <option value="TYT">TYT</option>
+              <option value="AYT">AYT</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label>Ders</label>
+            <input type="text" id="r-subject" class="text-input" placeholder="Örn: Kimya, Fizik, Biyoloji..." required />
+          </div>
+          <div class="form-group" style="grid-column: span 2;">
+            <label>Konu</label>
+            <input type="text" id="r-topic" class="text-input" placeholder="Örn: Asitler, Bazlar ve Tuzlar" required />
+          </div>
+          <div class="form-group" style="grid-column: span 2;">
+            <label>🎴 Kart Ön Yüz Sorusu (Çevirmeli Kart İçin)</label>
+            <input type="text" id="r-quiz-prompt" class="text-input" placeholder="Örn: Bir maddenin ısısı artar ifadesi doğru mudur?" />
+          </div>
+          <div class="form-group">
+            <label>❌ Tuzak (Kısa Yanlış İfade)</label>
+            <input type="text" id="r-wrong-trap" class="text-input" placeholder="Örn: Cismin ısısı arttı" />
+          </div>
+          <div class="form-group">
+            <label>✅ Doğrusu (Kısa Net Gerçek)</label>
+            <input type="text" id="r-right-fact" class="text-input" placeholder="Örn: İç enerji ve sıcaklık arttı" />
+          </div>
+          <div class="form-group" style="grid-column: span 2;">
+            <label>⚠️ Kart Başlığı</label>
+            <input type="text" id="r-title" class="text-input" placeholder="Örn: Isı mı, İç Enerji mi?" required />
+          </div>
+        </div>
+        <div class="form-group" style="margin-bottom:10px;">
+          <label>🔑 Tek Satır Şifre / Altın Kural</label>
+          <textarea id="r-rule" class="text-input" rows="2" placeholder="Örn: Isı aktarılan enerjidir; maddenin ısısı ölçülemez!" required></textarea>
+        </div>
+        <div class="form-group">
+          <label>💡 Kısa Kodlama / Örnek (Opsiyonel)</label>
+          <textarea id="r-example" class="text-input" rows="2" placeholder="Örn: 034 BMV → 1930 Belediye, 1933 Muhtarlık, 1934 Vekillik"></textarea>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-ghost" onclick="closeReminderModal()">İptal</button>
+          <button type="submit" class="btn btn-primary">Kaydet</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- SORU EKLEME MODALI -->
+  <div id="upload-modal" class="modal hidden">
+    <div class="modal-backdrop" onclick="closeUploadModal()"></div>
+    <div class="modal-dialog">
+      <div class="modal-header">
+        <h3>📸 Yeni Soru Ekle (SS veya Temiz Dijital Metin)</h3>
+        <button class="modal-close" onclick="closeUploadModal()">✕</button>
+      </div>
+      <form id="upload-form" onsubmit="submitQuestion(event)">
+        <div class="dropzone" id="dropzone" onclick="document.getElementById('ss-file-input').click()">
+          <input type="file" id="ss-file-input" accept="image/*" hidden onchange="handleFileSelect(event)" />
+          <div id="dropzone-placeholder">
+            <div class="dropzone-icon">📎</div>
+            <p><strong>Görsel seç</strong>, sürükle veya <strong>Ctrl+V</strong> ile yapıştır <em>(metin yazacaksan opsiyonel)</em></p>
+          </div>
+          <img id="ss-preview" class="hidden" alt="Önizleme" />
+        </div>
+
+        <div class="form-grid">
+          <div class="form-group">
+            <label>Sınav Türü</label>
+            <select id="q-exam-type" class="select-input" onchange="updateSubjectOptions()">
+              <option value="TYT">TYT</option>
+              <option value="AYT">AYT</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label>Ders</label>
+            <select id="q-subject" class="select-input" onchange="updateTopicOptions()"></select>
+          </div>
+          <div class="form-group">
+            <label>Konu</label>
+            <input type="text" id="q-topic" list="topic-datalist" class="text-input" placeholder="Konu seç veya yaz..." required />
+            <datalist id="topic-datalist"></datalist>
+          </div>
+          <div class="form-group">
+            <label>Hata Durumu</label>
+            <select id="q-mistake-type" class="select-input">
+              <option value="yanlis">Yanlış</option>
+              <option value="bos">Boş</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label>Doğru Cevap (Optik Kontrol İçin)</label>
+            <select id="q-correct-answer" class="select-input">
+              <option value="">Belirtilmedi</option>
+              <option value="A">A</option>
+              <option value="B">B</option>
+              <option value="C">C</option>
+              <option value="D">D</option>
+              <option value="E">E</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label>Deneme Adı</label>
+            <input type="text" id="q-exam-name" class="text-input" placeholder="Örn: Limit Aktör TYT-1" />
+          </div>
+        </div>
+
+        <div class="form-group" style="margin-bottom:10px;">
+          <label>Temiz Soru Metni (Opsiyonel — Görsel yoksa zorunlu)</label>
+          <textarea id="q-text" class="text-input" rows="3" placeholder="Sorunun temiz metni (Matematik için $x^2+1$ yazılabilir)..."></textarea>
+        </div>
+
+        <div class="form-group" style="margin-bottom:10px;">
+          <label>Adım Adım Detaylı Çözüm (Asya optiği kodladıktan sonra görünür)</label>
+          <textarea id="q-solution" class="text-input" rows="3" placeholder="Örn: 1. Adım: ... 2. Adım: ... Doğru cevap C'dir."></textarea>
+        </div>
+
+        <div class="modal-footer">
+          <button type="button" class="btn btn-ghost" onclick="closeUploadModal()">İptal</button>
+          <button type="submit" class="btn btn-primary">Kaydet</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- GÖRSEL BÜYÜTME (LIGHTBOX) -->
+  <div id="lightbox" class="lightbox hidden" onclick="closeLightbox()">
+    <img id="lightbox-img" src="" alt="Büyük Soru Görseli" />
+    <span class="lightbox-hint">Kapatmak için herhangi bir yere tıkla</span>
+  </div>
+
+  <div id="toast" class="toast hidden"></div>
+
+    <script>window.ASYA_STATIC_MODE = true;</script>
+  <script src="static_engine.js?v=2"></script>
+  <script src="app.js?v=7"></script>
+</body>
+</html>
