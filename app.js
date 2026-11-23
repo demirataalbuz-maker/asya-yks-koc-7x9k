@@ -40,6 +40,7 @@ function switchTab(tabName) {
   if (tabName === "reminders") loadReminders();
   if (tabName === "mock") loadMockExams();
   if (tabName === "bank") loadQuestions();
+  if (tabName === "reports") loadReports();
 }
 
 async function refreshAll() {
@@ -50,6 +51,7 @@ async function refreshAll() {
     loadReminders(),
     loadQuestions(),
     loadMockExams(),
+    loadReports(),
   ]);
 }
 
@@ -190,25 +192,64 @@ async function loadDashboard() {
     : `${s.active_total}/10 Soru`;
   document.getElementById("stat-exam-count").textContent = `Tamamlanan: ${s.completed_mock_exams}`;
   document.getElementById("sidebar-streak").textContent = `${s.streak_days} Gün`;
-  document.getElementById("nav-daily-badge").textContent = s.open_missions;
+
+  const dailyBadge = document.getElementById("nav-daily-badge");
+  if (dailyBadge) {
+    dailyBadge.textContent = s.today_completed_tests > 0 && !s.has_active_today_test ? "✓" : "1";
+  }
+  const repBadge = document.getElementById("nav-reports-badge");
+  if (repBadge) {
+    const rc = s.reported_open_count || 0;
+    repBadge.textContent = rc;
+    repBadge.style.display = rc > 0 ? "" : "none";
+  }
 
   const todayWrap = document.getElementById("dash-today-missions");
-  todayWrap.innerHTML = data.today_missions.length
-    ? data.today_missions
-        .map(
-          (m) => `
-          <div class="weak-item">
-            <div>
-              <strong>${escapeHtml(m.title)}</strong>
-              <div class="muted">${m.status === "graded" ? `${m.net_score} Net • ${m.deleted_count} soru temizlendi` : "PDF Hazır • Optik Kodlama Bekliyor"}</div>
-            </div>
-            <button class="btn btn-sm btn-secondary" onclick="switchTab('daily'); openMissionDetail(${m.id});">
-              ${m.status === "graded" ? "Çözümler" : "Optik Kodla"}
-            </button>
-          </div>`
-        )
-        .join("")
-    : `<p class="muted">Bugün henüz konu föyü oluşturulmadı. Soru eklediğinde <strong>Günlük Görev Föyü</strong> sekmesinden tek tıkla 10 soruluk PDF oluşturabilirsin.</p>`;
+  const activeToday = data.active_today_mission;
+  if (s.active_total === 0 && !activeToday) {
+    todayWrap.innerHTML = `
+      <div style="padding:8px 0;">
+        <span class="daily-hero-badge is-done">🎉 Havuz Tertemiz!</span>
+        <div class="daily-hero-title">Tüm hatalarını temizledin Asya!</div>
+        <p class="daily-hero-sub">Yeni deneme eklendiğinde bugünün akıllı testi burada hazır olacak.</p>
+      </div>`;
+  } else if (activeToday) {
+    todayWrap.innerHTML = `
+      <div class="daily-hero-inner">
+        <div class="daily-hero-left">
+          <span class="daily-hero-badge">✏️ Devam Eden Günlük Test</span>
+          <div class="daily-hero-title">${escapeHtml(activeToday.title)}</div>
+          <p class="daily-hero-sub">Tablet kaleminle kaldığın yerden çöz, şıkları işaretle — test bitince doğrular havuzdan silinsin!</p>
+        </div>
+        <div class="daily-hero-actions">
+          <button class="btn-hero-start" onclick="openPencilMissionById(${activeToday.id})">✏️ Kalemle Devam Et</button>
+        </div>
+      </div>`;
+  } else if (s.today_completed_tests > 0) {
+    todayWrap.innerHTML = `
+      <div class="daily-hero-inner">
+        <div class="daily-hero-left">
+          <span class="daily-hero-badge is-done">🎉 Bugünün Hedefi Tamamlandı!</span>
+          <div class="daily-hero-title">Bugün ${s.today_completed_tests} test bitirdin!</div>
+          <p class="daily-hero-sub">Harika gidiyorsun Asya! İstersen yarını bekle, enerjin varsa +10 soruluk Bonus Test açabilirsin.</p>
+        </div>
+        <div class="daily-hero-actions">
+          <button class="btn-hero-start" onclick="startSmartDailyTest(true)">⚡ +10 Bonus Test Başlat</button>
+        </div>
+      </div>`;
+  } else {
+    todayWrap.innerHTML = `
+      <div class="daily-hero-inner">
+        <div class="daily-hero-left">
+          <span class="daily-hero-badge">🎯 Bugünün Tek Görevi</span>
+          <div class="daily-hero-title">10 Soruluk Akıllı Karma Test</div>
+          <p class="daily-hero-sub">En zayıf konularından özel seçildi — kalabalık liste yok! Tablet kaleminle çöz, test sonunda netini ve çözümleri gör.</p>
+        </div>
+        <div class="daily-hero-actions">
+          <button class="btn-hero-start" onclick="startSmartDailyTest(false)">✏️ Kalemle Başla</button>
+        </div>
+      </div>`;
+  }
 
   const weakWrap = document.getElementById("dash-weak-topics");
   weakWrap.innerHTML = data.weakest_topics.length
@@ -231,10 +272,106 @@ async function loadDashboard() {
 
 async function loadDailyHub() {
   const examType = document.getElementById("daily-exam-filter")?.value || "ALL";
-  const [readyData, missionsData] = await Promise.all([
+  const [todayData, readyData, missionsData] = await Promise.all([
+    apiFetch(`/api/daily-today?exam_type=${encodeURIComponent(examType)}`),
     apiFetch(`/api/daily-missions/topics-ready?exam_type=${encodeURIComponent(examType)}`),
     apiFetch("/api/daily-missions"),
   ]);
+
+  // 1. TEK HERO KART: BUGÜNÜN AKILLI TESTİ
+  const hero = document.getElementById("daily-today-hero");
+  if (hero) {
+    const active = todayData.active_mission;
+    const subjChips = (todayData.preview_subjects || [])
+      .map((s) => `<span class="chip chip-tyt">${escapeHtml(s)}</span>`)
+      .join("");
+    if (todayData.remaining_pool === 0 && !active) {
+      hero.innerHTML = `
+        <div class="daily-hero-inner">
+          <div class="daily-hero-left">
+            <span class="daily-hero-badge is-done">🏆 Havuz Tertemiz!</span>
+            <div class="daily-hero-title">Çözülecek aktif hata kalmadı Asya!</div>
+            <p class="daily-hero-sub">Tüm hatalarını doğru yapıp sildin. Yeni deneme eklendiğinde burada yeni günlük test hazır olacak.</p>
+          </div>
+        </div>`;
+    } else if (active) {
+      hero.innerHTML = `
+        <div class="daily-hero-inner">
+          <div class="daily-hero-left">
+            <span class="daily-hero-badge">✏️ Bugünün Aktif Testi Hazır</span>
+            <div class="daily-hero-title">${escapeHtml(active.title)}</div>
+            <p class="daily-hero-sub">
+              Soruları tablet kaleminle çöz, şıkları tek tıkla işaretle — test sonunda doğrular havuzdan kalıcı silinir, yanlışlar tekrar karşına çıkar.
+            </p>
+            <div class="daily-hero-chips">
+              <span class="chip">🔥 Seri: ${todayData.streak_days} Gün</span>
+              <span class="chip">📚 Havuzda Kalan: ${todayData.remaining_pool} soru</span>
+              ${todayData.open_reports_count ? `<span class="chip chip-yanlis">🚩 ${todayData.open_reports_count} hatalı soru hariç tutuldu</span>` : ""}
+            </div>
+          </div>
+          <div class="daily-hero-actions">
+            <button class="btn-hero-start" onclick="openPencilMissionById(${active.id})">✏️ Kalemle Devam Et</button>
+            <a class="btn btn-secondary btn-sm" ${missionPdfAttr(active)}>🖨️ PDF</a>
+          </div>
+        </div>`;
+    } else if (todayData.today_completed_tests > 0) {
+      hero.innerHTML = `
+        <div class="daily-hero-inner">
+          <div class="daily-hero-left">
+            <span class="daily-hero-badge is-done">🎉 Bugünün Görevi Tamamlandı!</span>
+            <div class="daily-hero-title">Bugün ${todayData.today_completed_tests} test (${todayData.today_cleared_count} doğru temizlendi) ✨</div>
+            <p class="daily-hero-sub">
+              Süper gidiyorsun! Günlük hedefin bitti — istersen bugünlük dinlen, istersen havuzdan 10 soruluk yeni bir Bonus Test çöz.
+            </p>
+            <div class="daily-hero-chips">
+              <span class="chip chip-solved">🔥 Seri: ${todayData.streak_days} Gün</span>
+              <span class="chip">📚 Havuzda Kalan: ${todayData.remaining_pool} soru</span>
+            </div>
+          </div>
+          <div class="daily-hero-actions">
+            <button class="btn-hero-start" onclick="startSmartDailyTest(true)">⚡ +10 Soru Bonus Test Başlat</button>
+          </div>
+        </div>`;
+    } else {
+      hero.innerHTML = `
+        <div class="daily-hero-inner">
+          <div class="daily-hero-left">
+            <span class="daily-hero-badge">🎯 Bugünün Tek Görevi (${todayData.preview_count} Soru)</span>
+            <div class="daily-hero-title">Bugünün Akıllı Karma Testi</div>
+            <p class="daily-hero-sub">
+              En düşük puanlı konularından ders dengeli olarak seçildi. 17 föy kalabalığı yok — sadece bu 10 soruyu kaleminle çöz, test sonunda netini gör!
+            </p>
+            <div class="daily-hero-chips">
+              ${subjChips}
+              <span class="chip">📚 Havuz: ${todayData.remaining_pool} soru</span>
+            </div>
+          </div>
+          <div class="daily-hero-actions">
+            <button class="btn-hero-start" onclick="startSmartDailyTest(false)">✏️ Kalemle Çözmeye Başla</button>
+          </div>
+        </div>`;
+    }
+  }
+
+  // 2. TAMAMLANAN SON TESTLER
+  const recentEl = document.getElementById("daily-recent-graded");
+  if (recentEl) {
+    const rec = todayData.recent_graded || [];
+    recentEl.innerHTML = rec.length
+      ? rec
+          .map(
+            (m) => `
+            <div class="weak-item">
+              <div>
+                <strong>${escapeHtml(m.title)}</strong>
+                <div class="muted">${m.mission_date} • ✅ ${m.net_score} Net (${m.correct_count}D / ${m.wrong_count}Y / ${m.blank_count}B) • 🗑️ ${m.deleted_count} soru temizlendi</div>
+              </div>
+              <button class="btn btn-sm btn-secondary" onclick="openMissionDetail(${m.id})">💡 Çözümleri Gör</button>
+            </div>`
+          )
+          .join("")
+      : `<p class="muted">Henüz tamamlanan test yok — yukarıdan bugünün ilk 10 soruluk testini başlat!</p>`;
+  }
 
   const readyGrid = document.getElementById("ready-topics-grid");
   if (!readyData.topics.length) {
@@ -412,6 +549,8 @@ function renderMissionDetail(m) {
   }
 
   const isGraded = m.status === "graded";
+  const pencilBtn = document.getElementById("mission-pencil-btn");
+  if (pencilBtn) pencilBtn.classList.toggle("hidden", isGraded);
   document.getElementById("optical-form-card").classList.toggle("hidden", isGraded);
 
   const banner = document.getElementById("mission-graded-banner");
@@ -568,11 +707,15 @@ function renderMissionItems(items, isGraded) {
               : ""
           }
           <div class="mission-body">
-            <div class="topic-chips">
-              <span class="chip">Soru #${idx + 1}</span>
-              <span class="chip ${it.exam_type === "TYT" ? "chip-tyt" : "chip-ayt"}">${it.exam_type}</span>
-              <span class="chip">${escapeHtml(it.subject)} — ${escapeHtml(it.topic)}</span>
-              ${it.exam_name ? `<span class="chip">${escapeHtml(it.exam_name)}</span>` : ""}
+            <div class="topic-chips" style="justify-content:space-between;width:100%;">
+              <div class="topic-chips">
+                <span class="chip">Soru #${idx + 1}</span>
+                <span class="chip ${it.exam_type === "TYT" ? "chip-tyt" : "chip-ayt"}">${it.exam_type}</span>
+                <span class="chip">${escapeHtml(it.subject)} — ${escapeHtml(it.topic)}</span>
+                ${it.exam_name ? `<span class="chip">${escapeHtml(it.exam_name)}</span>` : ""}
+              </div>
+              <button type="button" class="btn btn-ghost btn-sm text-rose" style="padding:4px 8px;font-size:12px;"
+                onclick="reportMissionItemByIndex(${idx})">🚩 Sorun Bildir</button>
             </div>
             ${renderQuestionContentHtml(it)}
             ${gradedBadges}
@@ -1480,4 +1623,815 @@ function escapeHtml(str) {
     .replaceAll(">", "&gt;")
     .replaceAll('"', "&quot;")
     .replaceAll("'", "&#39;");
+}
+
+
+/* =====================================================================
+   ✏️ TAM EKRAN APPLE PENCIL / TABLET ÇÖZÜM MOTORU + 🚩 BİLDİRİM + ☁️ BULUT
+   ===================================================================== */
+
+const REPORT_REASON_LABELS = {
+  paragraf_eksik: "📄 Paragraf / Metin Eksik",
+  sekil_bozuk: "🖼️ Şekil / Harita Bozuk",
+  cevap_hatali: "❓ Cevap Anahtarı Hatalı",
+  yazim_hatasi: "✏️ Yazım / Formül Hatası",
+  diger: "🔧 Diğer",
+};
+
+const PENCIL = {
+  mission: null,
+  index: 0,
+  answers: {},      // item.id -> "A"|"B"|"C"|"D"|"E"|""
+  reportedIds: new Set(), // question_id or item.id reported during session
+  strokes: {},      // item.id -> [{ target: 'pad'|'q', tool, color, width, points: [{x,y,p}] }]
+  tool: "pen",
+  color: "#0f172a",
+  width: 2.4,
+  palmRejection: true,
+  drawOnQuestion: false,
+  isDrawing: false,
+  activeCanvasTarget: null,
+  activeStroke: null,
+  boundCanvases: false,
+};
+
+let REPORT_TARGET = null;
+let SELECTED_REPORT_REASON = "paragraf_eksik";
+
+async function startSmartDailyTest(bonus = false) {
+  try {
+    const examType = document.getElementById("daily-exam-filter")?.value || "ALL";
+    const data = await apiFetch("/api/daily-today/start", {
+      method: "POST",
+      body: JSON.stringify({ exam_type: examType, target_count: 10, bonus }),
+    });
+    openPencilSolver(data.mission);
+  } catch (err) {
+    showToast(err.message || "Günlük test başlatılamadı.");
+  }
+}
+
+async function openPencilMissionById(missionId) {
+  try {
+    const data = await apiFetch(`/api/daily-missions/${missionId}`);
+    openPencilSolver(data.mission);
+  } catch (err) {
+    showToast(err.message || "Görev açılamadı.");
+  }
+}
+
+function launchPencilFromActiveMission() {
+  if (!ACTIVE_MISSION) return;
+  openPencilSolver(ACTIVE_MISSION);
+}
+
+function openPencilSolver(mission) {
+  if (!mission || !mission.items || !mission.items.length) {
+    showToast("Bu testte çözülecek soru bulunamadı.");
+    return;
+  }
+  PENCIL.mission = mission;
+  PENCIL.index = 0;
+  PENCIL.answers = {};
+  PENCIL.reportedIds = new Set();
+  PENCIL.strokes = {};
+  PENCIL.drawOnQuestion = false;
+  mission.items.forEach((it) => {
+    PENCIL.answers[it.id] = it.user_answer || "";
+    PENCIL.strokes[it.id] = [];
+  });
+
+  const overlay = document.getElementById("pencil-solver-overlay");
+  overlay.classList.remove("hidden");
+  document.body.style.overflow = "hidden";
+
+  document.getElementById("pencil-workspace").classList.remove("hidden");
+  document.getElementById("pencil-bottom-bar").classList.remove("hidden");
+  document.getElementById("pencil-qnav").classList.remove("hidden");
+  document.getElementById("pencil-tools").classList.remove("hidden");
+  document.getElementById("pencil-results-view").classList.add("hidden");
+  document.getElementById("pencil-mission-title").textContent = mission.title || "Bugünün Akıllı Testi";
+
+  syncPencilToolbarUI();
+  bindPencilCanvasesOnce();
+  renderPencilCurrentQuestion();
+}
+
+function exitPencilSolver() {
+  const overlay = document.getElementById("pencil-solver-overlay");
+  overlay.classList.add("hidden");
+  document.body.style.overflow = "";
+  refreshAll();
+}
+
+function syncPencilToolbarUI() {
+  const palmBtn = document.getElementById("btn-palm-reject");
+  if (palmBtn) {
+    palmBtn.classList.toggle("active", PENCIL.palmRejection);
+    palmBtn.textContent = PENCIL.palmRejection ? "✋ Sadece Kalem" : "☝️ Kalem + Parmak";
+  }
+  const qDrawBtn = document.getElementById("btn-draw-on-question");
+  const qCanvas = document.getElementById("pencil-q-canvas");
+  if (qDrawBtn) {
+    qDrawBtn.classList.toggle("active", PENCIL.drawOnQuestion);
+    qDrawBtn.textContent = PENCIL.drawOnQuestion ? "📝 Soru Üstü AÇIK" : "📝 Soru Üstü";
+  }
+  if (qCanvas) {
+    qCanvas.classList.toggle("is-drawing-active", PENCIL.drawOnQuestion);
+  }
+  const hint = document.getElementById("pencil-pad-hint");
+  if (hint) {
+    hint.textContent = PENCIL.palmRejection
+      ? "Apple Pencil yazar • Avuç içi koruması AÇIK"
+      : "Kalem ve parmakla çizim AÇIK";
+  }
+}
+
+function setPencilTool(tool, color, width, btn) {
+  PENCIL.tool = tool;
+  PENCIL.color = color;
+  PENCIL.width = width;
+  document.querySelectorAll("#pencil-tools .ptool-btn[data-tool]").forEach((b) => b.classList.remove("active"));
+  if (btn) btn.classList.add("active");
+}
+
+function togglePalmRejection() {
+  PENCIL.palmRejection = !PENCIL.palmRejection;
+  syncPencilToolbarUI();
+  showToast(
+    PENCIL.palmRejection
+      ? "✋ Sadece Kalem modu: elin ekrana yaslanınca çizgi çekmez."
+      : "☝️ Kalem + Parmak modu: parmağınla da çizebilirsin."
+  );
+}
+
+function toggleQuestionOverlayDraw() {
+  PENCIL.drawOnQuestion = !PENCIL.drawOnQuestion;
+  syncPencilToolbarUI();
+  if (PENCIL.drawOnQuestion) {
+    resizeAndRedrawPencilCanvases();
+    showToast("📝 Artık sorunun / paragrafın doğrudan üstünü çizebilirsin!");
+  }
+}
+
+function renderPencilQNav() {
+  const nav = document.getElementById("pencil-qnav");
+  if (!nav || !PENCIL.mission) return;
+  nav.innerHTML = PENCIL.mission.items
+    .map((it, idx) => {
+      const ans = PENCIL.answers[it.id] || "";
+      const isRep = PENCIL.reportedIds.has(it.question_id || it.id);
+      const cls = [
+        "pq-pill",
+        idx === PENCIL.index ? "is-current" : "",
+        isRep ? "is-reported" : ans ? "is-answered" : "",
+      ]
+        .filter(Boolean)
+        .join(" ");
+      return `<button type="button" class="${cls}" onclick="jumpPencilQuestion(${idx})">
+        ${idx + 1}${isRep ? " 🚩" : ans ? `·${ans}` : ""}
+      </button>`;
+    })
+    .join("");
+}
+
+function jumpPencilQuestion(idx) {
+  if (!PENCIL.mission) return;
+  if (idx < 0 || idx >= PENCIL.mission.items.length) return;
+  PENCIL.index = idx;
+  renderPencilCurrentQuestion();
+}
+
+function stepPencilQuestion(delta) {
+  jumpPencilQuestion(PENCIL.index + delta);
+}
+
+function renderPencilCurrentQuestion() {
+  const m = PENCIL.mission;
+  if (!m) return;
+  const it = m.items[PENCIL.index];
+  const total = m.items.length;
+  const ans = PENCIL.answers[it.id] || "";
+  const isRep = PENCIL.reportedIds.has(it.question_id || it.id);
+
+  document.getElementById("pencil-progress-text").textContent =
+    `Soru ${PENCIL.index + 1} / ${total} • ${it.subject}`;
+
+  const qContent = document.getElementById("pencil-q-content");
+  const mediaHtml = it.image_filename
+    ? `<div class="q-svg-wrap" style="margin-bottom:12px;"><img src="${uploadUrl(it.image_filename)}" alt="Soru Görseli" style="max-width:100%;max-height:280px;border-radius:10px;border:1px solid #e2e8f0;" onclick="openLightbox(this.src)" /></div>`
+    : it.svg_markup
+    ? `<div class="q-svg-wrap" style="margin-bottom:12px;">${it.svg_markup}</div>`
+    : "";
+
+  const opts = it.options || {};
+  const optCards = ["A", "B", "C", "D", "E"]
+    .filter((k) => opts[k])
+    .map(
+      (k) => `
+      <button type="button" class="pencil-opt-card ${ans === k ? "selected" : ""}" onclick="pickPencilAnswer('${k}')">
+        <span class="pencil-opt-letter">${k}</span>
+        <span>${escapeHtml(opts[k])}</span>
+      </button>`
+    )
+    .join("");
+
+  qContent.innerHTML = `
+    <div class="pencil-q-meta-row">
+      <div class="topic-chips">
+        <span class="chip ${it.exam_type === "TYT" ? "chip-tyt" : "chip-ayt"}">${it.exam_type}</span>
+        <span class="chip">${escapeHtml(it.subject)}</span>
+        <span class="chip">${escapeHtml(it.topic)}</span>
+      </div>
+      ${it.exam_name ? `<span class="muted" style="font-size:12px;">${escapeHtml(it.exam_name)}</span>` : ""}
+    </div>
+    ${
+      isRep
+        ? `<div class="pencil-reported-banner">🚩 Bu soru hatalı/eksik olarak bildirildi — testten ve puan hesabından çıkarıldı.</div>`
+        : ""
+    }
+    ${mediaHtml}
+    ${it.question_text ? `<div class="pencil-q-text">${escapeHtml(it.question_text)}</div>` : ""}
+    ${optCards ? `<div class="pencil-q-options">${optCards}</div>` : ""}
+  `;
+  renderMath(qContent);
+
+  // Alt şık çubuğunu güncelle
+  document.querySelectorAll("#pencil-answer-strip .pans-btn").forEach((b) => {
+    b.classList.toggle("selected", b.dataset.letter === ans);
+  });
+
+  // Önceki / Sonraki / Bitir butonları
+  document.getElementById("pencil-prev-btn").disabled = PENCIL.index === 0;
+  const isLast = PENCIL.index === total - 1;
+  document.getElementById("pencil-next-btn").classList.toggle("hidden", isLast);
+  document.getElementById("pencil-finish-btn").classList.toggle("hidden", !isLast);
+
+  // Soruyu başa kaydır ve iki tuvali de bu sorunun çizimleriyle yeniden çiz
+  const pane = document.getElementById("pencil-question-pane");
+  if (pane) pane.scrollTop = 0;
+
+  renderPencilQNav();
+  requestAnimationFrame(() => resizeAndRedrawPencilCanvases());
+}
+
+function pickPencilAnswer(letter) {
+  if (!PENCIL.mission) return;
+  const it = PENCIL.mission.items[PENCIL.index];
+  PENCIL.answers[it.id] = letter;
+
+  document.querySelectorAll("#pencil-answer-strip .pans-btn").forEach((b) => {
+    b.classList.toggle("selected", b.dataset.letter === letter);
+  });
+  document.querySelectorAll("#pencil-q-content .pencil-opt-card").forEach((card) => {
+    const l = card.querySelector(".pencil-opt-letter")?.textContent?.trim();
+    card.classList.toggle("selected", l === letter);
+  });
+  renderPencilQNav();
+}
+
+function getCanvasPoint(canvas, e) {
+  const rect = canvas.getBoundingClientRect();
+  return {
+    x: e.clientX - rect.left,
+    y: e.clientY - rect.top,
+    p: e.pointerType === "pen" && e.pressure > 0 ? e.pressure : 0.5,
+  };
+}
+
+function shouldAcceptPointer(e) {
+  if (e.pointerType === "pen") return true;
+  if (e.pointerType === "mouse") return e.buttons === 1 || e.type === "pointerdown";
+  if (e.pointerType === "touch") return !PENCIL.palmRejection;
+  return true;
+}
+
+function drawSingleStroke(ctx, stroke) {
+  if (!stroke.points || !stroke.points.length) return;
+  ctx.save();
+  ctx.lineCap = "round";
+  ctx.lineJoin = "round";
+  if (stroke.tool === "eraser") {
+    ctx.globalCompositeOperation = "destination-out";
+    ctx.strokeStyle = "rgba(0,0,0,1)";
+    ctx.lineWidth = stroke.width || 22;
+  } else if (stroke.tool === "highlighter") {
+    ctx.globalCompositeOperation = "source-over";
+    ctx.globalAlpha = 0.34;
+    ctx.strokeStyle = stroke.color || "#facc15";
+    ctx.lineWidth = stroke.width || 16;
+  } else {
+    ctx.globalCompositeOperation = "source-over";
+    ctx.globalAlpha = 1;
+    ctx.strokeStyle = stroke.color || "#0f172a";
+    ctx.lineWidth = stroke.width || 2.4;
+  }
+
+  const pts = stroke.points;
+  ctx.beginPath();
+  if (pts.length === 1) {
+    ctx.arc(pts[0].x, pts[0].y, ctx.lineWidth / 2, 0, Math.PI * 2);
+    ctx.fillStyle = ctx.strokeStyle;
+    ctx.fill();
+  } else {
+    ctx.moveTo(pts[0].x, pts[0].y);
+    for (let i = 1; i < pts.length - 1; i++) {
+      const mx = (pts[i].x + pts[i + 1].x) / 2;
+      const my = (pts[i].y + pts[i + 1].y) / 2;
+      ctx.quadraticCurveTo(pts[i].x, pts[i].y, mx, my);
+    }
+    const last = pts[pts.length - 1];
+    ctx.lineTo(last.x, last.y);
+    ctx.stroke();
+  }
+  ctx.restore();
+}
+
+function resizeCanvasDpi(canvas, width, height) {
+  const dpr = Math.min(window.devicePixelRatio || 1, 2);
+  const w = Math.max(1, Math.floor(width));
+  const h = Math.max(1, Math.floor(height));
+  if (canvas.width !== Math.floor(w * dpr) || canvas.height !== Math.floor(h * dpr)) {
+    canvas.width = Math.floor(w * dpr);
+    canvas.height = Math.floor(h * dpr);
+  }
+  const ctx = canvas.getContext("2d");
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  ctx.clearRect(0, 0, w, h);
+  return ctx;
+}
+
+function resizeAndRedrawPencilCanvases() {
+  if (!PENCIL.mission) return;
+  const it = PENCIL.mission.items[PENCIL.index];
+  const list = PENCIL.strokes[it.id] || [];
+
+  const padWrap = document.getElementById("pencil-pad-wrap");
+  const padCanvas = document.getElementById("pencil-pad-canvas");
+  if (padWrap && padCanvas) {
+    const r = padWrap.getBoundingClientRect();
+    if (r.width > 10 && r.height > 10) {
+      const ctx = resizeCanvasDpi(padCanvas, r.width, r.height);
+      list.filter((s) => s.target === "pad").forEach((s) => drawSingleStroke(ctx, s));
+    }
+  }
+
+  const qStage = document.getElementById("pencil-q-stage");
+  const qCanvas = document.getElementById("pencil-q-canvas");
+  if (qStage && qCanvas) {
+    const w = qStage.scrollWidth;
+    const h = qStage.scrollHeight;
+    if (w > 10 && h > 10) {
+      const ctx = resizeCanvasDpi(qCanvas, w, h);
+      list.filter((s) => s.target === "q").forEach((s) => drawSingleStroke(ctx, s));
+    }
+  }
+}
+
+function attachCanvasEvents(canvas, target) {
+  canvas.addEventListener("pointerdown", (e) => {
+    if (!PENCIL.mission || !shouldAcceptPointer(e)) return;
+    if (target === "q" && !PENCIL.drawOnQuestion && e.pointerType !== "pen") return;
+    e.preventDefault();
+    try {
+      canvas.setPointerCapture(e.pointerId);
+    } catch {}
+    const it = PENCIL.mission.items[PENCIL.index];
+    const pt = getCanvasPoint(canvas, e);
+    const stroke = {
+      target,
+      tool: PENCIL.tool,
+      color: PENCIL.color,
+      width: PENCIL.width,
+      points: [pt],
+    };
+    PENCIL.isDrawing = true;
+    PENCIL.activeCanvasTarget = target;
+    PENCIL.activeStroke = stroke;
+    if (!PENCIL.strokes[it.id]) PENCIL.strokes[it.id] = [];
+    PENCIL.strokes[it.id].push(stroke);
+
+    const ctx = canvas.getContext("2d");
+    const dpr = Math.min(window.devicePixelRatio || 1, 2);
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    drawSingleStroke(ctx, stroke);
+  });
+
+  canvas.addEventListener("pointermove", (e) => {
+    if (!PENCIL.isDrawing || PENCIL.activeCanvasTarget !== target || !PENCIL.activeStroke) return;
+    if (!shouldAcceptPointer(e)) return;
+    e.preventDefault();
+    const events = typeof e.getCoalescedEvents === "function" ? e.getCoalescedEvents() : [e];
+    const stroke = PENCIL.activeStroke;
+    for (const ev of events) {
+      stroke.points.push(getCanvasPoint(canvas, ev));
+    }
+    const ctx = canvas.getContext("2d");
+    const dpr = Math.min(window.devicePixelRatio || 1, 2);
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    // Son segmenti hızlıca çiz (highlighter birikmesin diye highlighter'da tüm tuvali yeniden çiz)
+    if (stroke.tool === "highlighter") {
+      resizeAndRedrawPencilCanvases();
+    } else {
+      const pts = stroke.points;
+      const n = pts.length;
+      if (n >= 2) {
+        drawSingleStroke(ctx, { ...stroke, points: pts.slice(Math.max(0, n - 3)) });
+      }
+    }
+  });
+
+  const endDraw = () => {
+    if (!PENCIL.isDrawing) return;
+    PENCIL.isDrawing = false;
+    PENCIL.activeCanvasTarget = null;
+    PENCIL.activeStroke = null;
+  };
+  canvas.addEventListener("pointerup", endDraw);
+  canvas.addEventListener("pointercancel", endDraw);
+}
+
+function bindPencilCanvasesOnce() {
+  if (PENCIL.boundCanvases) return;
+  PENCIL.boundCanvases = true;
+  attachCanvasEvents(document.getElementById("pencil-pad-canvas"), "pad");
+  attachCanvasEvents(document.getElementById("pencil-q-canvas"), "q");
+  window.addEventListener("resize", () => {
+    if (!document.getElementById("pencil-solver-overlay")?.classList.contains("hidden")) {
+      resizeAndRedrawPencilCanvases();
+    }
+  });
+}
+
+function undoPencilStroke() {
+  if (!PENCIL.mission) return;
+  const it = PENCIL.mission.items[PENCIL.index];
+  const arr = PENCIL.strokes[it.id] || [];
+  if (!arr.length) return;
+  arr.pop();
+  resizeAndRedrawPencilCanvases();
+}
+
+function clearCurrentPencilCanvas() {
+  if (!PENCIL.mission) return;
+  const it = PENCIL.mission.items[PENCIL.index];
+  PENCIL.strokes[it.id] = [];
+  resizeAndRedrawPencilCanvases();
+}
+
+async function finishPencilTest() {
+  const m = PENCIL.mission;
+  if (!m) return;
+
+  const unanswered = m.items.filter(
+    (it) => !PENCIL.answers[it.id] && !PENCIL.reportedIds.has(it.question_id || it.id)
+  ).length;
+  if (unanswered > 0) {
+    if (!confirm(`${unanswered} soru boş bırakıldı. Testi bitirip sonucu görmek istediğine emin misin?`)) {
+      return;
+    }
+  }
+
+  const answers = m.items.map((it) => ({
+    item_id: it.id,
+    user_answer: PENCIL.reportedIds.has(it.question_id || it.id) ? "" : PENCIL.answers[it.id] || "",
+    self_result: null,
+  }));
+
+  try {
+    const data = await apiFetch(`/api/daily-missions/${m.id}/grade`, {
+      method: "POST",
+      body: JSON.stringify({ answers }),
+    });
+    renderPencilResults(data.mission);
+    refreshAll();
+  } catch (err) {
+    showToast(err.message || "Değerlendirme sırasında hata oluştu.");
+  }
+}
+
+function renderPencilResults(graded) {
+  document.getElementById("pencil-workspace").classList.add("hidden");
+  document.getElementById("pencil-bottom-bar").classList.add("hidden");
+  document.getElementById("pencil-qnav").classList.add("hidden");
+  document.getElementById("pencil-tools").classList.add("hidden");
+
+  const resView = document.getElementById("pencil-results-view");
+  resView.classList.remove("hidden");
+
+  const repCount = PENCIL.reportedIds.size;
+  const rowsHtml = (graded.items || [])
+    .map((it, idx) => {
+      const isRep = PENCIL.reportedIds.has(it.question_id || it.id);
+      const isCorrect = !isRep && it.result === "correct";
+      const isWrong = !isRep && it.result === "wrong";
+      const badge = isRep
+        ? `<span class="chip chip-yanlis">🚩 Bildirildi (Puan Dışı)</span>`
+        : isCorrect
+        ? `<span class="chip chip-solved">✅ Doğru — Havuzdan Kalıcı Çıktı!</span>`
+        : isWrong
+        ? `<span class="chip chip-yanlis">❌ Yanlış (Sen: ${escapeHtml(it.user_answer)} • Doğru: ${escapeHtml(it.correct_answer)}) — Tekrar Çıkacak</span>`
+        : `<span class="chip chip-bos">○ Boş (Doğru: ${escapeHtml(it.correct_answer || "?")}) — Havuzda Kaldı</span>`;
+
+      const solBlock = isRep
+        ? ""
+        : `
+          <details ${isCorrect ? "" : "open"} style="margin-top:10px;">
+            <summary style="cursor:pointer;font-weight:700;color:#4338ca;font-size:13.5px;">💡 Adım Adım Çözümü Gör</summary>
+            <div class="solution-box" style="margin-top:8px;">
+              <div>${escapeHtml(it.solution || "Çözüm metni eklenmemiş.").replaceAll("\n", "<br/>")}</div>
+            </div>
+          </details>`;
+
+      return `
+        <div class="card" style="margin-bottom:12px;border-left:4px solid ${isRep ? "#f43f5e" : isCorrect ? "#10b981" : isWrong ? "#ef4444" : "#f59e0b"};">
+          <div class="topic-chips" style="margin-bottom:8px;">
+            <span class="chip">Soru #${idx + 1}</span>
+            <span class="chip">${escapeHtml(it.subject)} — ${escapeHtml(it.topic)}</span>
+            ${badge}
+          </div>
+          ${it.question_text ? `<div style="font-size:13.5px;color:#334155;margin-bottom:6px;">${escapeHtml(it.question_text).slice(0, 260)}${it.question_text.length > 260 ? "..." : ""}</div>` : ""}
+          ${solBlock}
+        </div>`;
+    })
+    .join("");
+
+  resView.innerHTML = `
+    <div class="presult-hero">
+      <div>
+        <h2 style="margin:0 0 6px;font-size:24px;">🎉 Test Tamamlandı, Asya!</h2>
+        <p style="margin:0;opacity:0.9;font-size:14.5px;">
+          Doğru yaptığın <strong>${graded.deleted_count} soru</strong> havuzdan kalıcı silindi — bir daha karşına çıkmayacak! Yanlış/boşlar ileride tekrar testine girecek.
+        </p>
+        <div class="presult-kpis">
+          <span class="presult-kpi">🎯 ${graded.net_score} Net</span>
+          <span class="presult-kpi">✅ ${graded.correct_count} Doğru</span>
+          <span class="presult-kpi">❌ ${graded.wrong_count} Yanlış</span>
+          <span class="presult-kpi">○ ${graded.blank_count} Boş</span>
+          ${repCount ? `<span class="presult-kpi">🚩 ${repCount} Bildirildi</span>` : ""}
+        </div>
+      </div>
+      <div class="daily-hero-actions">
+        <button type="button" class="btn btn-emerald" onclick="startSmartDailyTest(true)">⚡ +10 Bonus Test</button>
+        <button type="button" class="btn btn-secondary" onclick="exitPencilSolver()">🏠 Ana Sayfaya Dön</button>
+      </div>
+    </div>
+    ${rowsHtml}
+  `;
+  renderMath(resView);
+}
+
+/* ---------- 🚩 Hatalı / Eksik Soru Bildirim Modalı & Koç Kutusu ---------- */
+
+function openReportModalForCurrent() {
+  if (!PENCIL.mission) return;
+  const it = PENCIL.mission.items[PENCIL.index];
+  openReportModal({
+    question_id: it.question_id || it.id,
+    mission_id: PENCIL.mission.id,
+    exam_type: it.exam_type,
+    subject: it.subject,
+    topic: it.topic,
+    exam_name: it.exam_name || "",
+    question_preview: (it.question_text || "").slice(0, 200),
+    fromPencil: true,
+  });
+}
+
+function reportMissionItemByIndex(idx) {
+  if (!ACTIVE_MISSION || !ACTIVE_MISSION.items?.[idx]) return;
+  const it = ACTIVE_MISSION.items[idx];
+  openReportModal({
+    question_id: it.question_id || it.id,
+    mission_id: ACTIVE_MISSION.id,
+    exam_type: it.exam_type,
+    subject: it.subject,
+    topic: it.topic,
+    exam_name: it.exam_name || "",
+    question_preview: (it.question_text || "").slice(0, 200),
+    fromPencil: false,
+  });
+}
+
+function openReportModal(target) {
+  REPORT_TARGET = target;
+  SELECTED_REPORT_REASON = "paragraf_eksik";
+  document.getElementById("report-note").value = "";
+  document.getElementById("report-target-label").textContent =
+    `${target.exam_type || "TYT"} ${target.subject || ""} • ${target.topic || ""}${target.exam_name ? ` (${target.exam_name})` : ""}`;
+  document.querySelectorAll("#report-reasons .reason-chip").forEach((c) => {
+    c.classList.toggle("active", c.dataset.reason === SELECTED_REPORT_REASON);
+  });
+  document.getElementById("report-modal").classList.remove("hidden");
+}
+
+function closeReportModal() {
+  document.getElementById("report-modal").classList.add("hidden");
+  REPORT_TARGET = null;
+}
+
+function selectReportReason(reason, btn) {
+  SELECTED_REPORT_REASON = reason;
+  document.querySelectorAll("#report-reasons .reason-chip").forEach((c) => c.classList.remove("active"));
+  if (btn) btn.classList.add("active");
+}
+
+async function submitQuestionReport(e) {
+  e.preventDefault();
+  if (!REPORT_TARGET) return;
+  const note = (document.getElementById("report-note").value || "").trim();
+  const payload = {
+    question_id: REPORT_TARGET.question_id || null,
+    mission_id: REPORT_TARGET.mission_id || null,
+    exam_type: REPORT_TARGET.exam_type || "TYT",
+    subject: REPORT_TARGET.subject || "",
+    topic: REPORT_TARGET.topic || "",
+    exam_name: REPORT_TARGET.exam_name || "",
+    question_preview: REPORT_TARGET.question_preview || "",
+    reason: SELECTED_REPORT_REASON,
+    note,
+    reported_from: window.ASYA_STATIC_MODE ? "ipad" : "pc",
+  };
+  try {
+    await apiFetch("/api/reports", {
+      method: "POST",
+      body: JSON.stringify(payload),
+    });
+    const wasFromPencil = Boolean(REPORT_TARGET.fromPencil);
+    const qKey = REPORT_TARGET.question_id;
+    closeReportModal();
+    showToast("🚩 Bildirildi! Soru puan ve test dışı bırakıldı.");
+
+    if (wasFromPencil && PENCIL.mission) {
+      const curItem = PENCIL.mission.items[PENCIL.index];
+      PENCIL.reportedIds.add(qKey || curItem.id);
+      PENCIL.answers[curItem.id] = "";
+      renderPencilCurrentQuestion();
+      if (PENCIL.index < PENCIL.mission.items.length - 1) {
+        setTimeout(() => stepPencilQuestion(1), 450);
+      }
+    }
+    loadReports();
+    loadDashboard();
+  } catch (err) {
+    showToast(err.message || "Bildirim kaydedilemedi.");
+  }
+}
+
+async function loadReports() {
+  const listEl = document.getElementById("reports-list");
+  const syncCard = document.getElementById("cloud-sync-card");
+  if (!listEl) return;
+
+  const statusFilter = document.getElementById("reports-status-filter")?.value || "open";
+  const [repData, syncStatus] = await Promise.all([
+    apiFetch(`/api/reports?status=${encodeURIComponent(statusFilter)}`),
+    apiFetch("/api/cloud-sync/status").catch(() => ({ configured: false })),
+  ]);
+
+  const repBadge = document.getElementById("nav-reports-badge");
+  if (repBadge) {
+    const oc = repData.open_count || 0;
+    repBadge.textContent = oc;
+    repBadge.style.display = oc > 0 ? "" : "none";
+  }
+
+  if (syncCard) {
+    if (window.ASYA_STATIC_MODE) {
+      const openList = (repData.reports || []).filter((r) => r.status === "open");
+      const waText = encodeURIComponent(
+        "🚩 Asya YKS — Bildirilen Sorular:\n" +
+          openList
+            .map(
+              (r, i) =>
+                `${i + 1}) #${r.question_id || "?"} (${r.subject} - ${r.exam_name || r.topic}): ${REPORT_REASON_LABELS[r.reason] || r.reason}${r.note ? " — " + r.note : ""}`
+            )
+            .join("\n")
+      );
+      syncCard.innerHTML = syncStatus.configured
+        ? `<div class="daily-hero-inner">
+             <div>
+               <strong>☁️ Otomatik Bulut Senkronizasyon AKTİF</strong>
+               <div class="muted">Asya burada 🚩 bildirim yapınca veya test bitirince abisinin bilgisayarına anında düşer!</div>
+             </div>
+             <span class="chip chip-solved">Supabase Bağlı ✓</span>
+           </div>`
+        : `<div class="daily-hero-inner">
+             <div>
+               <strong>📱 Yerel Bildirim Modu (Bulut Kurulumu Bekleniyor)</strong>
+               <div class="muted">Bildirilen sorular iPad'de anında elenir. İstersen tek tıkla WhatsApp'tan özet gönderebilirsin.</div>
+             </div>
+             ${openList.length ? `<a class="btn btn-emerald btn-sm" href="https://wa.me/?text=${waText}" target="_blank">📲 WhatsApp'tan Gönder (${openList.length})</a>` : ""}
+           </div>`;
+      const pullBtn = document.getElementById("btn-cloud-pull");
+      if (pullBtn) pullBtn.classList.add("hidden");
+    } else {
+      syncCard.innerHTML = `
+        <div class="daily-hero-inner">
+          <div>
+            <strong>${syncStatus.configured ? "☁️ Supabase Bulut Senkronizasyonu Bağlı ✓" : "☁️ Supabase Bulut Senkronizasyonu (Henüz Bağlanmadı)"}</strong>
+            <div class="muted">
+              ${
+                syncStatus.configured
+                  ? `Bağlı proje: ${escapeHtml(syncStatus.url)} • Yukarıdan tek tıkla iPad bildirimlerini ve Asya'nın çözdüğü soruları çekebilirsin.`
+                  : "Ücretsiz Supabase URL ve anon key girildiğinde Asya'nın iPad'den bildirdiği sorular ve çözdüğü testler bilgisayarına otomatik düşer."
+              }
+            </div>
+          </div>
+          <details>
+            <summary class="btn btn-secondary btn-sm" style="list-style:none;cursor:pointer;">⚙️ Supabase Ayarı</summary>
+            <form onsubmit="saveCloudSyncConfigForm(event)" style="margin-top:10px;display:flex;flex-wrap:wrap;gap:8px;align-items:center;">
+              <input type="url" id="sb-url" class="text-input" style="min-width:240px;" placeholder="https://xxxx.supabase.co" value="${escapeHtml(syncStatus.url || "")}" required />
+              <input type="text" id="sb-key" class="text-input" style="min-width:240px;" placeholder="Supabase anon public key..." required />
+              <button type="submit" class="btn btn-primary btn-sm">Kaydet</button>
+            </form>
+          </details>
+        </div>`;
+    }
+  }
+
+  const reports = repData.reports || [];
+  if (!reports.length) {
+    listEl.innerHTML = `<p class="muted">🎉 Hiç açık hatalı soru bildirimi yok — havuz tertemiz!</p>`;
+    return;
+  }
+
+  listEl.innerHTML = reports
+    .map((r) => {
+      const isClosed = r.status !== "open";
+      return `
+        <div class="report-item-card ${isClosed ? "is-closed" : ""}">
+          <div class="report-item-top">
+            <div class="topic-chips">
+              <span class="chip chip-yanlis">${escapeHtml(REPORT_REASON_LABELS[r.reason] || r.reason)}</span>
+              <span class="chip">${escapeHtml(r.exam_type)} ${escapeHtml(r.subject)} — ${escapeHtml(r.topic)}</span>
+              ${r.exam_name ? `<span class="chip">${escapeHtml(r.exam_name)}</span>` : ""}
+              <span class="chip">${r.reported_from === "ipad" ? "📱 iPad" : "💻 PC"}</span>
+              ${isClosed ? `<span class="chip chip-solved">✓ Kapatıldı</span>` : ""}
+            </div>
+            <div class="header-actions">
+              ${
+                !isClosed
+                  ? `<button class="btn btn-sm btn-rose" onclick="deleteReportedQuestion(${r.id})">🗑️ Soruyu Havuzdan Sil</button>
+                     <button class="btn btn-sm btn-secondary" onclick="resolveReport(${r.id}, 'dismissed')">✅ Sorun Yok / Kapat</button>`
+                  : `<button class="btn btn-sm btn-ghost" onclick="resolveReport(${r.id}, 'open')">↺ Yeniden Aç</button>`
+              }
+            </div>
+          </div>
+          ${r.note ? `<div style="font-size:13.5px;"><strong>Asya'nın Notu:</strong> ${escapeHtml(r.note)}</div>` : ""}
+          ${r.question_preview ? `<div class="report-preview-box">${escapeHtml(r.question_preview)}</div>` : ""}
+        </div>`;
+    })
+    .join("");
+}
+
+async function resolveReport(reportId, status) {
+  await apiFetch(`/api/reports/${reportId}`, {
+    method: "PATCH",
+    body: JSON.stringify({ status }),
+  });
+  showToast(status === "open" ? "Bildirim yeniden açıldı." : "Bildirim kapatıldı.");
+  await refreshAll();
+}
+
+async function deleteReportedQuestion(reportId) {
+  if (!confirm("Bu hatalı soruyu havuzdan kalıcı silip bildirimi kapatmak istediğine emin misin?")) return;
+  await apiFetch(`/api/reports/${reportId}/delete-question`, { method: "DELETE" });
+  showToast("🗑️ Hatalı soru havuzdan silindi ve bildirim kapatıldı!");
+  await refreshAll();
+}
+
+async function saveCloudSyncConfigForm(e) {
+  e.preventDefault();
+  const url = document.getElementById("sb-url").value.trim();
+  const anon_key = document.getElementById("sb-key").value.trim();
+  try {
+    const res = await apiFetch("/api/cloud-sync/config", {
+      method: "POST",
+      body: JSON.stringify({ url, anon_key }),
+    });
+    showToast(res.message || "Supabase kaydedildi!");
+    loadReports();
+  } catch (err) {
+    showToast(err.message || "Kaydedilemedi.");
+  }
+}
+
+async function triggerCloudSyncPull() {
+  try {
+    showToast("☁️ Supabase'den veriler çekiliyor...");
+    const res = await apiFetch("/api/cloud-sync/pull", { method: "POST" });
+    if (res.error) {
+      showToast("⚠️ " + res.error);
+    } else if (!res.configured) {
+      showToast("Önce yukarıdan Supabase URL ve key bilgisini gir knk.");
+    } else {
+      showToast(
+        `☁️ Senkron tamam! +${res.new_reports} bildirim, ${res.synced_cleared_questions} temizlenen soru çekildi.`
+      );
+      await refreshAll();
+    }
+  } catch (err) {
+    showToast(err.message || "Senkron hatası.");
+  }
 }

@@ -82,7 +82,7 @@
     }
 
     // Veri paketini hemen arka planda indirmeye başla (submit listener'ı BLOKLAMADAN!)
-    const dataPromise = fetch("data.enc.json?v=4", { cache: "no-store" })
+    const dataPromise = fetch("data.enc.json?v=5", { cache: "no-store" })
       .then((resp) => {
         if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
         return resp.json();
@@ -387,6 +387,7 @@
       customQuestions: [],
       topicClearedExtra: {},
       repeatWrongCounts: {},
+      reviewedCounts: {},
       missionGrades: {},
       deletedMissionIds: [],
       customMissions: [],
@@ -394,6 +395,8 @@
       printedBatchMap: {},
       deletedReminderIds: [],
       customReminders: [],
+      customReports: [],
+      reportStatusMap: {},
       mockExams: [],
       activityDays: [],
       nextCustomId: 100000,
@@ -442,18 +445,134 @@
     return streak;
   }
 
+  function getMergedReports(st) {
+    const seed = window.ASYA_STATIC_DATA || {};
+    const all = [...(seed.reports || []), ...(st.customReports || [])];
+    return all
+      .map((r) => ({
+        ...r,
+        status: r.id in (st.reportStatusMap || {}) ? st.reportStatusMap[r.id] : r.status || "open",
+      }))
+      .sort((a, b) => (a.status === "open" ? 0 : 1) - (b.status === "open" ? 0 : 1) || b.id - a.id);
+  }
+
+  function getOpenReportedQuestionIds(st) {
+    const set = new Set();
+    for (const r of getMergedReports(st)) {
+      if (r.status === "open" && r.question_id != null) {
+        set.add(Number(r.question_id));
+      }
+    }
+    return set;
+  }
+
+  function pushProgressToSupabase(st) {
+    const sb = window.ASYA_STATIC_DATA?.supabase;
+    if (!sb || !sb.url || !sb.anon_key) return;
+    const url = `${sb.url.replace(/\/$/, "")}/rest/v1/asya_progress`;
+    const payload = {
+      profile_key: sb.profile_key || "asya_main",
+      cleared_question_ids: st.clearedQuestionIds || [],
+      repeat_wrong_counts: st.repeatWrongCounts || {},
+      mastered_map: st.masteredMap || {},
+      activity_days: st.activityDays || [],
+      mission_grades: st.missionGrades || {},
+      updated_at: new Date().toISOString(),
+    };
+    fetch(url, {
+      method: "POST",
+      headers: {
+        apikey: sb.anon_key,
+        Authorization: `Bearer ${sb.anon_key}`,
+        "Content-Type": "application/json",
+        Prefer: "resolution=merge-duplicates",
+      },
+      body: JSON.stringify(payload),
+    }).catch(() => {});
+  }
+
+  function pushReportToSupabase(rep) {
+    const sb = window.ASYA_STATIC_DATA?.supabase;
+    if (!sb || !sb.url || !sb.anon_key) return;
+    const url = `${sb.url.replace(/\/$/, "")}/rest/v1/asya_reports`;
+    fetch(url, {
+      method: "POST",
+      headers: {
+        apikey: sb.anon_key,
+        Authorization: `Bearer ${sb.anon_key}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        question_id: rep.question_id,
+        mission_id: rep.mission_id,
+        exam_type: rep.exam_type || "TYT",
+        subject: rep.subject || "",
+        topic: rep.topic || "",
+        exam_name: rep.exam_name || "",
+        question_preview: (rep.question_preview || "").slice(0, 240),
+        reason: rep.reason || "diger",
+        note: rep.note || "",
+        status: "open",
+        reported_from: "ipad",
+      }),
+    }).catch(() => {});
+  }
+
   function getActiveQuestions(st) {
     const seed = window.ASYA_STATIC_DATA || {};
     const cleared = new Set(st.clearedQuestionIds || []);
     const deleted = new Set(st.deletedQuestionIds || []);
+    const openRep = getOpenReportedQuestionIds(st);
     const all = [...(seed.questions || []), ...(st.customQuestions || [])];
     return all
-      .filter((q) => !cleared.has(q.id) && !deleted.has(q.id))
+      .filter((q) => !cleared.has(q.id) && !deleted.has(q.id) && !openRep.has(Number(q.id)))
       .map((q) => ({
         ...q,
         times_wrong: (q.times_wrong || 0) + (st.repeatWrongCounts[q.id] || 0),
-        times_reviewed: (q.times_reviewed || 0) + (st.repeatWrongCounts[q.id] || 0),
+        times_reviewed:
+          (q.times_reviewed || 0) + (st.reviewedCounts?.[q.id] || 0) + (st.repeatWrongCounts[q.id] || 0),
       }));
+  }
+
+  function selectSmartDailyQuestions(st, examType = "ALL", targetCount = 10) {
+    const scores = computeTopicScores(st);
+    const scoreMap = new Map(scores.map((s) => [`${s.exam_type}||${s.subject}||${s.topic}`, s.score]));
+    let pool = getActiveQuestions(st).filter((q) => examType === "ALL" || q.exam_type === examType);
+    if (!pool.length) return [];
+
+    pool.sort((a, b) => {
+      const ra = a.times_reviewed || 0;
+      const rb = b.times_reviewed || 0;
+      if (ra !== rb) return ra - rb;
+      const sa = scoreMap.get(`${a.exam_type}||${a.subject}||${a.topic}`) ?? 50;
+      const sb = scoreMap.get(`${b.exam_type}||${b.subject}||${b.topic}`) ?? 50;
+      if (sa !== sb) return sa - sb;
+      return (b.times_wrong || 0) - (a.times_wrong || 0) || a.id - b.id;
+    });
+
+    const bySubj = new Map();
+    const order = [];
+    for (const q of pool) {
+      if (!bySubj.has(q.subject)) {
+        bySubj.set(q.subject, []);
+        order.push(q.subject);
+      }
+      bySubj.get(q.subject).push(q);
+    }
+    const selected = [];
+    while (selected.length < targetCount) {
+      let moved = false;
+      for (const s of order) {
+        if (selected.length >= targetCount) break;
+        const arr = bySubj.get(s);
+        if (arr && arr.length) {
+          selected.push(arr.shift());
+          moved = true;
+        }
+      }
+      if (!moved) break;
+    }
+    return selected;
   }
 
   function getTopicWeight(seed, examType, subject, topic) {
@@ -678,6 +797,17 @@
         : 100;
       const openMissions = missions.filter((m) => m.status === "open").length;
       const completedMocks = (st.mockExams || []).filter((e) => e.exam.status === "completed").length;
+      const today = todayIso();
+      const todayGraded = missions.filter((m) => m.mission_date === today && m.status === "graded");
+      const activeToday =
+        missions.find(
+          (m) =>
+            m.mission_date === today &&
+            m.status === "open" &&
+            (m.title.startsWith("Bugünün") || m.title.startsWith("Bonus"))
+        ) || null;
+      const openReportsCnt = getMergedReports(st).filter((r) => r.status === "open").length;
+      const sbCfg = Boolean(seed.supabase?.url && seed.supabase?.anon_key);
 
       return {
         stats: {
@@ -685,6 +815,7 @@
           tyt_total: tytTotal,
           ayt_total: aytTotal,
           cleared_total: clearedFromSeed + clearedExtra,
+          reported_open_count: openReportsCnt,
           average_topic_score: avgScore,
           exam_counts: examCounts,
           total_expected_questions: totalExpectedAll,
@@ -692,8 +823,12 @@
           completed_mock_exams: completedMocks,
           streak_days: calcStreak(st.activityDays),
           open_missions: openMissions,
+          today_completed_tests: todayGraded.length,
+          has_active_today_test: Boolean(activeToday),
+          cloud_sync_configured: sbCfg,
         },
         today_missions: missions.slice(0, 6),
+        active_today_mission: activeToday,
         weakest_topics: scores.filter((t) => t.active_questions > 0).slice(0, 8),
       };
     }
@@ -828,6 +963,134 @@
       return { deleted: true, id };
     }
 
+    // 5a. Smart Daily Today (Tek Günlük Görev)
+    if (path === "/api/daily-today" && method === "GET") {
+      const et = params.get("exam_type") || "ALL";
+      const today = todayIso();
+      const missions = getMergedMissions(st);
+      const activeToday =
+        missions.find(
+          (m) =>
+            m.mission_date === today &&
+            m.status === "open" &&
+            (m.title.startsWith("Bugünün") || m.title.startsWith("Bonus"))
+        ) || null;
+      const todayGraded = missions.filter((m) => m.mission_date === today && m.status === "graded");
+      const recentGraded = missions.filter((m) => m.status === "graded").slice(0, 10);
+      const activePool = getActiveQuestions(st).filter((q) => et === "ALL" || q.exam_type === et);
+      const preview = selectSmartDailyQuestions(st, et, 10);
+      const previewSubjects = [...new Set(preview.map((q) => q.subject))].slice(0, 5);
+      const todaySolved = todayGraded.reduce(
+        (acc, m) => acc + (m.correct_count || 0) + (m.wrong_count || 0) + (m.blank_count || 0),
+        0
+      );
+      const todayCleared = todayGraded.reduce((acc, m) => acc + (m.deleted_count || 0), 0);
+      return {
+        today_date: today,
+        remaining_pool: activePool.length,
+        open_reports_count: getOpenReportedQuestionIds(st).size,
+        streak_days: calcStreak(st.activityDays),
+        today_completed_tests: todayGraded.length,
+        today_solved_count: todaySolved,
+        today_cleared_count: todayCleared,
+        active_mission: activeToday,
+        preview_count: preview.length,
+        preview_subjects: previewSubjects,
+        recent_graded: recentGraded,
+      };
+    }
+
+    if (path === "/api/daily-today/start" && method === "POST") {
+      const et = body.exam_type || "ALL";
+      const target = Number(body.target_count || 10);
+      const bonus = Boolean(body.bonus);
+      const today = todayIso();
+      const missions = getMergedMissions(st);
+      if (!bonus) {
+        const existing = missions.find(
+          (m) =>
+            m.mission_date === today &&
+            m.status === "open" &&
+            (m.title.startsWith("Bugünün") || m.title.startsWith("Bonus"))
+        );
+        if (existing) return { mission: existing };
+      }
+      const selected = selectSmartDailyQuestions(st, et, target);
+      if (!selected.length) {
+        throw new Error("Havuzda çözülecek aktif soru kalmadı — hepsini temizledin, harikasın!");
+      }
+      const todayGradedCnt = missions.filter((m) => m.mission_date === today && m.status === "graded").length;
+      const subjs = [...new Set(selected.map((q) => q.subject))];
+      const subjSummary = subjs.slice(0, 3).join(", ") + (subjs.length > 3 ? "..." : "");
+      const title =
+        bonus || todayGradedCnt > 0
+          ? `Bonus Test #${todayGradedCnt + 1} (${selected.length} Soru • ${subjSummary})`
+          : `Bugünün Akıllı Testi (${selected.length} Soru • ${subjSummary})`;
+      const m = makeMissionFromPool(st, selected, et === "ALL" ? "TYT/AYT Karma" : et, "Karma", subjSummary, title);
+      return { mission: m };
+    }
+
+    // 5b. Question Reports (🚩 Hatalı / Eksik Soru Bildirimleri)
+    if (path === "/api/reports" && method === "GET") {
+      const stFilter = params.get("status") || "all";
+      const all = getMergedReports(st);
+      const openCount = all.filter((r) => r.status === "open").length;
+      const filtered = stFilter === "all" ? all : all.filter((r) => r.status === stFilter);
+      return { reports: filtered, open_count: openCount };
+    }
+
+    if (path === "/api/reports" && method === "POST") {
+      const rep = {
+        id: st.nextCustomId++,
+        question_id: body.question_id ?? null,
+        mission_id: body.mission_id ?? null,
+        exam_type: body.exam_type || "TYT",
+        subject: body.subject || "",
+        topic: body.topic || "",
+        exam_name: body.exam_name || "",
+        question_preview: (body.question_preview || "").slice(0, 240),
+        reason: body.reason || "diger",
+        note: (body.note || "").trim(),
+        status: "open",
+        reported_from: "ipad",
+        created_at: nowStr(),
+      };
+      st.customReports.push(rep);
+      saveState(st);
+      pushReportToSupabase(rep);
+      return { report: rep };
+    }
+
+    const repDelQMatch = path.match(/^\/api\/reports\/(\d+)\/delete-question$/);
+    if (repDelQMatch && method === "DELETE") {
+      const rid = Number(repDelQMatch[1]);
+      const rep = getMergedReports(st).find((r) => r.id === rid);
+      if (rep && rep.question_id != null && !st.deletedQuestionIds.includes(rep.question_id)) {
+        st.deletedQuestionIds.push(rep.question_id);
+      }
+      st.reportStatusMap[rid] = "resolved";
+      saveState(st);
+      return { resolved: true, deleted_question_id: rep?.question_id ?? null };
+    }
+
+    const repPatchMatch = path.match(/^\/api\/reports\/(\d+)$/);
+    if (repPatchMatch && method === "PATCH") {
+      const rid = Number(repPatchMatch[1]);
+      st.reportStatusMap[rid] = body.status || "resolved";
+      saveState(st);
+      return { report: getMergedReports(st).find((r) => r.id === rid) };
+    }
+
+    if (path === "/api/cloud-sync/status" && method === "GET") {
+      const sb = seed.supabase || {};
+      return {
+        configured: Boolean(sb.url && sb.anon_key),
+        url: sb.url || "",
+        profile_key: sb.profile_key || "asya_main",
+        has_key: Boolean(sb.anon_key),
+      };
+    }
+
     // 5. Daily Missions
     if (path === "/api/daily-missions/topics-ready" && method === "GET") {
       const et = params.get("exam_type") || "ALL";
@@ -905,12 +1168,16 @@
       let deletedCount = 0;
       const gradedItems = {};
 
+      const openRepIds = getOpenReportedQuestionIds(st);
       for (const it of rawMission.items || []) {
+        const isReported = it.question_id != null && openRepIds.has(Number(it.question_id));
         const a = ansMap.get(it.id) || {};
-        const uAns = (a.user_answer || "").trim().toUpperCase();
+        const uAns = isReported ? "" : (a.user_answer || "").trim().toUpperCase();
         const key = (it.correct_answer || "").trim().toUpperCase();
         let res = "blank";
-        if (key) {
+        if (isReported) {
+          res = "blank";
+        } else if (key) {
           if (!uAns) res = "blank";
           else if (uAns === key) res = "correct";
           else res = "wrong";
@@ -919,7 +1186,9 @@
         }
 
         let deletedFromDb = 0;
-        if (res === "correct") {
+        if (isReported) {
+          // Hatalı bildirilen soru puan dışı bırakılır
+        } else if (res === "correct") {
           correct += 1;
           if (it.question_id && !st.clearedQuestionIds.includes(it.question_id)) {
             st.clearedQuestionIds.push(it.question_id);
@@ -932,9 +1201,13 @@
           wrong += 1;
           if (it.question_id) {
             st.repeatWrongCounts[it.question_id] = (st.repeatWrongCounts[it.question_id] || 0) + 1;
+            st.reviewedCounts[it.question_id] = (st.reviewedCounts[it.question_id] || 0) + 1;
           }
         } else {
           blank += 1;
+          if (it.question_id) {
+            st.reviewedCounts[it.question_id] = (st.reviewedCounts[it.question_id] || 0) + 1;
+          }
         }
         gradedItems[it.id] = { user_answer: uAns, result: res, deleted_from_db: deletedFromDb };
       }
@@ -950,6 +1223,7 @@
       };
       recordActivityDay(st);
       saveState(st);
+      pushProgressToSupabase(st);
       return { mission: getMergedMissions(st).find((x) => x.id === id) };
     }
 
@@ -1021,6 +1295,7 @@
         if (body.mastered) recordActivityDay(st);
       }
       saveState(st);
+      pushProgressToSupabase(st);
       return { reminder: getMergedReminders(st).find((r) => r.id === id) };
     }
     if (remMatch && method === "DELETE") {

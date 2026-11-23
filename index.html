@@ -17,7 +17,7 @@
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.css" />
   <script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.js"></script>
   <script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/contrib/auto-render.min.js"></script>
-  <link rel="stylesheet" href="styles.css?v=7" />
+  <link rel="stylesheet" href="styles.css?v=9" />
 
   <style>
     .lock-overlay {
@@ -183,6 +183,11 @@
           <span class="nav-icon">🖼️</span>
           <span>Soru Bankası</span>
         </button>
+        <button class="nav-btn" data-tab="reports">
+          <span class="nav-icon">🚩</span>
+          <span>Bildirimler</span>
+          <span class="nav-badge badge-rose" id="nav-reports-badge">0</span>
+        </button>
       </nav>
 
       <div class="sidebar-footer">
@@ -236,12 +241,12 @@
         </div>
 
         <div class="dashboard-grid">
-          <div class="card">
+          <div class="card hero-today-card">
             <div class="card-header">
-              <h3>🎯 Bugünkü Günlük Görev Föyleri</h3>
-              <button class="btn btn-sm btn-primary" onclick="switchTab('daily')">Görevlere Git →</button>
+              <h3>🎯 Bugünün Akıllı Görevi</h3>
+              <button class="btn btn-sm btn-ghost" onclick="switchTab('daily')">Detay →</button>
             </div>
-            <div id="dash-today-missions" class="weak-list"></div>
+            <div id="dash-today-missions" class="today-hero-body"></div>
           </div>
 
           <div class="card">
@@ -254,13 +259,13 @@
         </div>
       </section>
 
-      <!-- 2. KONU BAZLI GÜNLÜK GÖREV + OTOMATİK PDF + OPTİK KODLAMA -->
+      <!-- 2. GÜNLÜK AKILLI TEST + KALEMLE ÇÖZME + YAZDIRILABİLİR ARŞİV -->
       <section id="tab-daily" class="tab-panel">
         <div id="daily-hub-view">
           <header class="page-header">
             <div>
-              <h2>🎯 Günlük Görev Föyleri (Hazır PDF Kâğıtları)</h2>
-              <p class="subtitle">Tüm dersler (Matematik, Geometri, Fizik, Kimya, Türkçe...) tek kâğıtta! PDF'i indirip çıktı al, çözüp siteye optik kodla — doğru yaptıkların DB'den silinsin!</p>
+              <h2>🎯 Bugünün Akıllı Testi</h2>
+              <p class="subtitle">Kalabalık liste yok — her gün en zayıf konularından tek bir 10 soruluk karma test! Tablet kaleminle çöz, şıkkını işaretle, test sonunda doğrular havuzdan kalıcı çıksın.</p>
             </div>
             <div class="header-actions">
               <select id="daily-exam-filter" class="select-input" onchange="loadDailyHub()">
@@ -268,27 +273,38 @@
                 <option value="TYT">Sadece TYT</option>
                 <option value="AYT">Sadece AYT (Sayısal)</option>
               </select>
-              <button class="btn btn-primary" onclick="createMixedMission(10)">📄 10 Soruluk Karma Föy</button>
-              <button class="btn btn-secondary" onclick="splitAllIntoSheets()">📦 Tüm Havuzu 10'luk Kâğıtlara Böl</button>
-              <button class="btn btn-secondary" onclick="createAllInOneSheet()">📚 Tüm Soruları Tek PDF Yap</button>
             </div>
           </header>
 
+          <!-- TEK HERO KART: BUGÜNÜN GÖREVİ -->
+          <div id="daily-today-hero" class="card daily-hero-card"></div>
+
+          <!-- TAMAMLANAN SON TESTLER -->
           <div class="card">
             <div class="card-header">
-              <h3>🗂️ Hazır Günlük Görev Kâğıtları (Otomatik PDF)</h3>
-              <span class="muted">Klasör: gunluk_gorevler/</span>
+              <h3>✅ Tamamlanan Testlerim</h3>
+              <span class="muted">Çözümleri tekrar incelemek için tıkla</span>
             </div>
-            <div id="missions-history-list" class="weak-list"></div>
+            <div id="daily-recent-graded" class="weak-list"></div>
           </div>
 
-          <details class="card">
-            <summary style="cursor:pointer;font-weight:700;font-size:15px;">📚 İstersen Tek Konudan Özel Föy Oluştur (Konu Bazlı Liste)</summary>
-            <div style="margin-top:14px;" id="ready-topics-grid" class="ready-topics-grid"></div>
+          <!-- KOÇ / YAZDIRILABİLİR PDF ARŞİVİ (ASYA'NIN GÖZÜNÜ YORMAMAK İÇİN KAPALI) -->
+          <details class="card archive-details">
+            <summary style="cursor:pointer;font-weight:700;font-size:15px;">🖨️ Yazdırılabilir PDF Föy Arşivi & Koç Araçları (İsteğe Bağlı)</summary>
+            <div style="margin-top:14px;display:flex;flex-wrap:wrap;gap:8px;margin-bottom:14px;">
+              <button class="btn btn-secondary btn-sm" onclick="createMixedMission(10)">📄 Yeni 10'luk PDF Föyü</button>
+              <button class="btn btn-secondary btn-sm" onclick="splitAllIntoSheets()">📦 Havuzu 10'luk PDF'lere Böl</button>
+              <button class="btn btn-secondary btn-sm" onclick="createAllInOneSheet()">📚 Tüm Soruları Tek PDF Yap</button>
+            </div>
+            <div id="missions-history-list" class="weak-list"></div>
+            <details style="margin-top:14px;">
+              <summary style="cursor:pointer;font-weight:600;font-size:13.5px;color:var(--muted);">📚 Tek Konudan Özel Föy Oluştur (Konu Bazlı Liste)</summary>
+              <div style="margin-top:12px;" id="ready-topics-grid" class="ready-topics-grid"></div>
+            </details>
           </details>
         </div>
 
-        <!-- AKTİF GÖREV DETAY & OPTİK FORM -->
+        <!-- AKTİF GÖREV DETAY & OPTİK FORM (PDF / SONUÇ İNCELEME) -->
         <div id="daily-detail-view" class="hidden">
           <div class="card exam-topbar">
             <div>
@@ -296,9 +312,10 @@
               <span class="muted" id="mission-detail-meta"></span>
             </div>
             <div class="header-actions">
+              <button id="mission-pencil-btn" class="btn btn-primary btn-sm" onclick="launchPencilFromActiveMission()">✏️ Kalemle Çöz</button>
               <a id="mission-pdf-link" class="btn btn-secondary btn-sm" href="#" target="_blank">📥 PDF İndir</a>
-              <a id="mission-print-link" class="btn btn-secondary btn-sm" href="#" target="_blank">🖨️ Yazdır (ÖSYM Föyü)</a>
-              <button class="btn btn-ghost btn-sm" onclick="closeMissionDetail()">← Listeye Dön</button>
+              <a id="mission-print-link" class="btn btn-secondary btn-sm" href="#" target="_blank">🖨️ Yazdır</a>
+              <button class="btn btn-ghost btn-sm" onclick="closeMissionDetail()">← Geri Dön</button>
             </div>
           </div>
 
@@ -514,7 +531,154 @@
         <!-- MOD 2: GÖRSEL POSTER DUVARI -->
         <div id="reminders-grid" class="reminders-grid hidden"></div>
       </section>
+
+      <!-- 7. 🚩 BİLDİRİLEN SORULAR & BULUT SENKRONİZASYON (KOÇ KUTUSU) -->
+      <section id="tab-reports" class="tab-panel">
+        <header class="page-header">
+          <div>
+            <h2>🚩 Hatalı / Eksik Soru Bildirimleri</h2>
+            <p class="subtitle">Asya soruyu çözerken 🚩 ile bildirdiğinde soru anında testten ve puan hesabından çıkarılır; buradan tek tıkla inceleyip temizleyebilirsin.</p>
+          </div>
+          <div class="header-actions" id="reports-header-actions">
+            <button class="btn btn-primary btn-sm" id="btn-cloud-pull" onclick="triggerCloudSyncPull()">☁️ iPad'den Senkronize Et</button>
+          </div>
+        </header>
+
+        <div id="cloud-sync-card" class="card cloud-sync-card"></div>
+
+        <div class="card">
+          <div class="card-header">
+            <h3>📋 Bildirim Listesi</h3>
+            <select id="reports-status-filter" class="select-input" onchange="loadReports()">
+              <option value="open" selected>Açık Bildirimler (İncelenecek)</option>
+              <option value="all">Tümü (Çözülenler Dahil)</option>
+            </select>
+          </div>
+          <div id="reports-list" class="weak-list"></div>
+        </div>
+      </section>
     </main>
+  </div>
+
+  <!-- ✏️ TAM EKRAN APPLE PENCIL / TABLET ÇÖZÜM MODU -->
+  <div id="pencil-solver-overlay" class="pencil-overlay hidden">
+    <div class="pencil-topbar">
+      <div class="pencil-top-left">
+        <button type="button" class="btn btn-ghost btn-sm" onclick="exitPencilSolver()">← Çık</button>
+        <div class="pencil-title-wrap">
+          <strong id="pencil-mission-title">Bugünün Akıllı Testi</strong>
+          <span class="muted" id="pencil-progress-text">Soru 1 / 10</span>
+        </div>
+      </div>
+
+      <div class="pencil-tools" id="pencil-tools">
+        <button type="button" class="ptool-btn active" data-tool="pen" data-color="#0f172a" onclick="setPencilTool('pen', '#0f172a', 2.4, this)" title="Siyah Kalem">
+          <span class="pdot" style="background:#0f172a;"></span>
+        </button>
+        <button type="button" class="ptool-btn" data-tool="pen" data-color="#2563eb" onclick="setPencilTool('pen', '#2563eb', 2.4, this)" title="Mavi Kalem">
+          <span class="pdot" style="background:#2563eb;"></span>
+        </button>
+        <button type="button" class="ptool-btn" data-tool="pen" data-color="#dc2626" onclick="setPencilTool('pen', '#dc2626', 2.4, this)" title="Kırmızı Kalem">
+          <span class="pdot" style="background:#dc2626;"></span>
+        </button>
+        <button type="button" class="ptool-btn" data-tool="highlighter" data-color="#facc15" onclick="setPencilTool('highlighter', '#facc15', 16, this)" title="Sarı Fosforlu">
+          🖍️
+        </button>
+        <button type="button" class="ptool-btn" data-tool="eraser" data-color="" onclick="setPencilTool('eraser', '', 22, this)" title="Silgi">
+          🧹
+        </button>
+        <span class="ptool-sep"></span>
+        <button type="button" class="ptool-btn" onclick="undoPencilStroke()" title="Geri Al">↩️</button>
+        <button type="button" class="ptool-btn" onclick="clearCurrentPencilCanvas()" title="Bu Sorunun Çizimini Temizle">🗑️</button>
+        <span class="ptool-sep"></span>
+        <button type="button" class="ptool-chip active" id="btn-palm-reject" onclick="togglePalmRejection()" title="Avuç içi ekrana yaslandığında çizmez; sadece Apple Pencil yazar">
+          ✋ Sadece Kalem
+        </button>
+        <button type="button" class="ptool-chip" id="btn-draw-on-question" onclick="toggleQuestionOverlayDraw()" title="Paragrafın veya şeklin doğrudan üstünü çizmek için aç">
+          📝 Soru Üstü
+        </button>
+        <button type="button" class="ptool-chip ptool-report" onclick="openReportModalForCurrent()" title="Bu soruda eksik/hata varsa bildir">
+          🚩 Sorun Bildir
+        </button>
+      </div>
+    </div>
+
+    <!-- Soru Numara Hapları -->
+    <div class="pencil-qnav" id="pencil-qnav"></div>
+
+    <!-- Çalışma Alanı (Yatay iPad'de 2 Sütun: Sol Soru + Üstü Çizilebilir Katman | Sağ Geniş Karalama Defteri) -->
+    <div id="pencil-workspace" class="pencil-workspace">
+      <div class="pencil-question-pane" id="pencil-question-pane">
+        <div class="pencil-q-stage" id="pencil-q-stage">
+          <div id="pencil-q-content" class="pencil-q-content"></div>
+          <canvas id="pencil-q-canvas" class="pencil-q-canvas"></canvas>
+        </div>
+      </div>
+
+      <div class="pencil-pad-pane" id="pencil-pad-pane">
+        <div class="pencil-pad-header">
+          <span>✏️ İşlem & Karalama Alanı</span>
+          <span class="muted" id="pencil-pad-hint">Apple Pencil ile rahatça yaz</span>
+        </div>
+        <div class="pencil-pad-wrap" id="pencil-pad-wrap">
+          <canvas id="pencil-pad-canvas" class="pencil-pad-canvas"></canvas>
+        </div>
+      </div>
+    </div>
+
+    <!-- Test Sonu Özet & Çözüm Ekranı (Başta Gizli — Test Bitince Açılır!) -->
+    <div id="pencil-results-view" class="pencil-results-view hidden"></div>
+
+    <!-- Alt Şık İşaretleme & Geçiş Çubuğu -->
+    <div id="pencil-bottom-bar" class="pencil-bottom-bar">
+      <button type="button" class="btn btn-secondary" id="pencil-prev-btn" onclick="stepPencilQuestion(-1)">← Önceki</button>
+
+      <div class="pencil-answer-strip" id="pencil-answer-strip">
+        <button type="button" class="pans-btn" data-letter="A" onclick="pickPencilAnswer('A')">A</button>
+        <button type="button" class="pans-btn" data-letter="B" onclick="pickPencilAnswer('B')">B</button>
+        <button type="button" class="pans-btn" data-letter="C" onclick="pickPencilAnswer('C')">C</button>
+        <button type="button" class="pans-btn" data-letter="D" onclick="pickPencilAnswer('D')">D</button>
+        <button type="button" class="pans-btn" data-letter="E" onclick="pickPencilAnswer('E')">E</button>
+        <button type="button" class="pans-btn pans-blank" data-letter="" onclick="pickPencilAnswer('')">Boş</button>
+      </div>
+
+      <div class="pencil-next-wrap">
+        <button type="button" class="btn btn-primary" id="pencil-next-btn" onclick="stepPencilQuestion(1)">Sonraki →</button>
+        <button type="button" class="btn btn-emerald hidden" id="pencil-finish-btn" onclick="finishPencilTest()">✅ Testi Bitir & Sonucu Gör</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 🚩 HATALI / EKSİK SORU BİLDİRİM MODALI -->
+  <div id="report-modal" class="modal hidden">
+    <div class="modal-backdrop" onclick="closeReportModal()"></div>
+    <div class="modal-dialog modal-sm">
+      <div class="modal-header">
+        <h3>🚩 Bu Soruda Sorun Bildir</h3>
+        <button class="modal-close" onclick="closeReportModal()">✕</button>
+      </div>
+      <form id="report-form" onsubmit="submitQuestionReport(event)">
+        <p class="muted" id="report-target-label" style="margin-bottom:12px;"></p>
+        <div class="report-reasons" id="report-reasons">
+          <button type="button" class="reason-chip active" data-reason="paragraf_eksik" onclick="selectReportReason('paragraf_eksik', this)">📄 Paragraf / Metin Eksik</button>
+          <button type="button" class="reason-chip" data-reason="sekil_bozuk" onclick="selectReportReason('sekil_bozuk', this)">🖼️ Şekil / Harita Bozuk</button>
+          <button type="button" class="reason-chip" data-reason="cevap_hatali" onclick="selectReportReason('cevap_hatali', this)">❓ Cevap Anahtarı Hatalı</button>
+          <button type="button" class="reason-chip" data-reason="yazim_hatasi" onclick="selectReportReason('yazim_hatasi', this)">✏️ Yazım / Formül Hatası</button>
+          <button type="button" class="reason-chip" data-reason="diger" onclick="selectReportReason('diger', this)">🔧 Diğer</button>
+        </div>
+        <div class="form-group" style="margin-top:12px;">
+          <label>Kısa Not (İsteğe Bağlı)</label>
+          <textarea id="report-note" class="text-input" rows="2" placeholder="Örn: Üstteki okuma parçası gözükmüyor..."></textarea>
+        </div>
+        <p class="muted" style="font-size:12px;margin-top:8px;">
+          ✅ Bildirdiğinde bu soru hemen testten ve puan hesabından çıkarılır; kimseye ekstra iş çıkmaz!
+        </p>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-ghost" onclick="closeReportModal()">Vazgeç</button>
+          <button type="submit" class="btn btn-rose">🚩 Bildir & Soruyu Geç</button>
+        </div>
+      </form>
+    </div>
   </div>
 
   <!-- HATIRLATMA KARTI EKLEME MODALI -->
@@ -661,7 +825,7 @@
   <div id="toast" class="toast hidden"></div>
 
     <script>window.ASYA_STATIC_MODE = true;</script>
-  <script src="static_engine.js?v=4"></script>
-  <script src="app.js?v=9"></script>
+  <script src="static_engine.js?v=5"></script>
+  <script src="app.js?v=10"></script>
 </body>
 </html>
