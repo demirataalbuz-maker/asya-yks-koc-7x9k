@@ -82,7 +82,7 @@
     }
 
     // Veri paketini hemen arka planda indirmeye başla (submit listener'ı BLOKLAMADAN!)
-    const dataPromise = fetch("data.enc.json?v=5", { cache: "no-store" })
+    const dataPromise = fetch("data.enc.json?v=6", { cache: "no-store" })
       .then((resp) => {
         if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
         return resp.json();
@@ -466,10 +466,21 @@
     return set;
   }
 
+  function sbHeaders(sb, extra = {}) {
+    const h = {
+      apikey: sb.anon_key,
+      Authorization: `Bearer ${sb.anon_key}`,
+      "Content-Type": "application/json",
+      ...extra,
+    };
+    if (sb.sync_token) h["x-asya-sync"] = sb.sync_token;
+    return h;
+  }
+
   function pushProgressToSupabase(st) {
     const sb = window.ASYA_STATIC_DATA?.supabase;
     if (!sb || !sb.url || !sb.anon_key) return;
-    const url = `${sb.url.replace(/\/$/, "")}/rest/v1/asya_progress`;
+    const url = `${sb.url.replace(/\/$/, "")}/rest/v1/asya_progress?on_conflict=profile_key`;
     const payload = {
       profile_key: sb.profile_key || "asya_main",
       cleared_question_ids: st.clearedQuestionIds || [],
@@ -481,12 +492,7 @@
     };
     fetch(url, {
       method: "POST",
-      headers: {
-        apikey: sb.anon_key,
-        Authorization: `Bearer ${sb.anon_key}`,
-        "Content-Type": "application/json",
-        Prefer: "resolution=merge-duplicates",
-      },
+      headers: sbHeaders(sb, { Prefer: "resolution=merge-duplicates" }),
       body: JSON.stringify(payload),
     }).catch(() => {});
   }
@@ -497,11 +503,7 @@
     const url = `${sb.url.replace(/\/$/, "")}/rest/v1/asya_reports`;
     fetch(url, {
       method: "POST",
-      headers: {
-        apikey: sb.anon_key,
-        Authorization: `Bearer ${sb.anon_key}`,
-        "Content-Type": "application/json",
-      },
+      headers: sbHeaders(sb),
       body: JSON.stringify({
         question_id: rep.question_id,
         mission_id: rep.mission_id,
